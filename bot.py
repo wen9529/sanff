@@ -128,15 +128,14 @@ def clear_today_data():
     save_history()
     logger.info("=== 今日数据已成功清空清零，重新开始累积计数 ===")
 
-# 基于最新50期开奖记录做统计算法，预测下一期的【大小、单双、波色】
-def analyze_and_predict():
-    records = history_db["records"]
-    if len(records) < 50:
-        return None, None
+# 基于 50 期开奖记录计算高精度的多因子预测模型 (大小、单双、波色)
+def analyze_and_predict_advanced(records, start_index=0):
+    if len(records) < start_index + 50:
+        return None
+        
+    target_records = records[start_index : start_index + 50]
     
-    # 仅提取最近50期
-    target_records = records[:50]
-    
+    # 1. 基础数据统计
     big_count = 0
     small_count = 0
     odd_count = 0
@@ -147,41 +146,201 @@ def analyze_and_predict():
     
     for r in target_records:
         spec = r.get("special_num", 0)
-        # 大小统计
         if spec != 49:
             if spec >= 25: big_count += 1
             else: small_count += 1
-        # 单双
         if spec % 2 != 0: odd_count += 1
         else: even_count += 1
-        # 波色
         if spec in RED_WAVE: red_count += 1
         elif spec in BLUE_WAVE: blue_count += 1
         elif spec in GREEN_WAVE: green_count += 1
+
+    # 2. 遗漏值分析 (从最新一期往后数，连续未出现的期数)
+    big_omission = 0
+    small_omission = 0
+    odd_omission = 0
+    even_omission = 0
+    red_omission = 0
+    blue_omission = 0
+    green_omission = 0
+    
+    # 寻找大小遗漏
+    for r in target_records:
+        spec = r.get("special_num", 0)
+        if spec == 49:
+            continue
+        if spec >= 25:
+            break
+        small_omission += 1
         
-    # === 统计预测模型：均值回归 (Regression to the Mean) ===
-    # 核心算法：在样本总量充足时，出现频率明显低于期望均值的属性在下期出现的概率偏高。
+    for r in target_records:
+        spec = r.get("special_num", 0)
+        if spec == 49:
+            continue
+        if spec < 25:
+            break
+        big_omission += 1
+        
+    # 寻找单双遗漏
+    for r in target_records:
+        spec = r.get("special_num", 0)
+        if spec % 2 != 0:
+            break
+        odd_omission += 1
+        
+    for r in target_records:
+        spec = r.get("special_num", 0)
+        if spec % 2 == 0:
+            break
+        even_omission += 1
+        
+    # 寻找波色遗漏
+    for r in target_records:
+        spec = r.get("special_num", 0)
+        if spec in RED_WAVE:
+            break
+        red_omission += 1
+        
+    for r in target_records:
+        spec = r.get("special_num", 0)
+        if spec in BLUE_WAVE:
+            break
+        blue_omission += 1
+        
+    for r in target_records:
+        spec = r.get("special_num", 0)
+        if spec in GREEN_WAVE:
+            break
+        green_omission += 1
+
+    # 3. 马尔可夫链状态转移 (计算在当前状态下，历史转移到各状态的频次)
+    big_to_big = 0
+    big_to_small = 0
+    small_to_big = 0
+    small_to_small = 0
     
-    # 大小预测
-    pred_big_small = "🔥 大" if big_count < small_count else "❄️ 小"
-    # 单双预测
-    pred_odd_even = "⚡ 单" if odd_count < even_count else "🌙 双"
+    odd_to_odd = 0
+    odd_to_even = 0
+    even_to_odd = 0
+    even_to_even = 0
     
-    # 波色预测 (找出开出次数最少的那种颜色作为冷门回归推荐)
-    color_stats = [
-        {"color": "🔴 红波", "count": red_count},
-        {"color": "🔵 蓝波", "count": blue_count},
-        {"color": "🟢 绿波", "count": green_count}
+    red_to_red = 0
+    red_to_blue = 0
+    red_to_green = 0
+    blue_to_red = 0
+    blue_to_blue = 0
+    blue_to_green = 0
+    green_to_red = 0
+    green_to_blue = 0
+    green_to_green = 0
+    
+    for i in range(len(target_records) - 2, -1, -1):
+        prev_rec = target_records[i + 1]
+        curr_rec = target_records[i]
+        
+        p_spec = prev_rec.get("special_num", 0)
+        c_spec = curr_rec.get("special_num", 0)
+        
+        # 大小转移 (排除49和值干扰)
+        if p_spec != 49 and c_spec != 49:
+            if p_spec >= 25:
+                if c_spec >= 25: big_to_big += 1
+                else: big_to_small += 1
+            else:
+                if c_spec >= 25: small_to_big += 1
+                else: small_to_small += 1
+                
+        # 单双转移
+        if p_spec % 2 != 0:
+            if c_spec % 2 != 0: odd_to_odd += 1
+            else: odd_to_even += 1
+        else:
+            if c_spec % 2 != 0: even_to_odd += 1
+            else: even_to_even += 1
+            
+        # 波色转移
+        p_color = "red" if p_spec in RED_WAVE else "blue" if p_spec in BLUE_WAVE else "green"
+        c_color = "red" if c_spec in RED_WAVE else "blue" if c_spec in BLUE_WAVE else "green"
+        
+        if p_color == "red":
+            if c_color == "red": red_to_red += 1
+            elif c_color == "blue": red_to_blue += 1
+            else: red_to_green += 1
+        elif p_color == "blue":
+            if c_color == "red": blue_to_red += 1
+            elif c_color == "blue": blue_to_blue += 1
+            else: blue_to_green += 1
+        else:
+            if c_color == "red": green_to_red += 1
+            elif c_color == "blue": green_to_blue += 1
+            else: green_to_green += 1
+
+    # 4. 融合各因子权重计算最终得分
+    # ------------------ 大小得分计算 ------------------
+    bs_mr = (small_count - big_count) / 50.0
+    bs_om = (big_omission - small_omission) * 0.1
+    latest_spec = target_records[0].get("special_num", 0)
+    bs_tr = 0.0
+    if latest_spec != 49:
+        if latest_spec >= 25:
+            bs_tr = 0.5 if big_to_big > big_to_small else -0.5
+        else:
+            bs_tr = 0.5 if small_to_big > small_to_small else -0.5
+            
+    bs_score = 0.35 * bs_mr + 0.35 * bs_om + 0.30 * bs_tr
+    pred_big_small = "🔥 大" if bs_score >= 0 else "❄️ 小"
+
+    # ------------------ 单双得分计算 ------------------
+    oe_mr = (even_count - odd_count) / 50.0
+    oe_om = (odd_omission - even_omission) * 0.1
+    oe_tr = 0.0
+    if latest_spec % 2 != 0:
+        oe_tr = 0.5 if odd_to_odd > odd_to_even else -0.5
+    else:
+        oe_tr = 0.5 if even_to_odd > even_to_even else -0.5
+        
+    oe_score = 0.35 * oe_mr + 0.35 * oe_om + 0.30 * oe_tr
+    pred_odd_even = "⚡ 单" if oe_score >= 0 else "🌙 双"
+
+    # ------------------ 波色得分计算 ------------------
+    mr_red = (50 - red_count) / 50.0
+    mr_blue = (50 - blue_count) / 50.0
+    mr_green = (50 - green_count) / 50.0
+    
+    om_red_score = red_omission * 0.15
+    om_blue_score = blue_omission * 0.15
+    om_green_score = green_omission * 0.15
+    
+    latest_color = "red" if latest_spec in RED_WAVE else "blue" if latest_spec in BLUE_WAVE else "green"
+    tr_red, tr_blue, tr_green = 0.0, 0.0, 0.0
+    if latest_color == "red":
+        total_tr = max(1, red_to_red + red_to_blue + red_to_green)
+        tr_red = red_to_red / total_tr
+        tr_blue = red_to_blue / total_tr
+        tr_green = red_to_green / total_tr
+    elif latest_color == "blue":
+        total_tr = max(1, blue_to_red + blue_to_blue + blue_to_green)
+        tr_red = blue_to_red / total_tr
+        tr_blue = blue_to_blue / total_tr
+        tr_green = blue_to_green / total_tr
+    else:
+        total_tr = max(1, green_to_red + green_to_blue + green_to_green)
+        tr_red = green_to_red / total_tr
+        tr_blue = green_to_blue / total_tr
+        tr_green = green_to_green / total_tr
+        
+    score_red = 0.35 * mr_red + 0.35 * om_red_score + 0.30 * tr_red
+    score_blue = 0.35 * mr_blue + 0.35 * om_blue_score + 0.30 * tr_blue
+    score_green = 0.35 * mr_green + 0.35 * om_green_score + 0.30 * tr_green
+    
+    color_scores = [
+        {"color": "🔴 红波", "score": score_red},
+        {"color": "🔵 蓝波", "score": score_blue},
+        {"color": "🟢 绿波", "score": score_green}
     ]
-    color_stats.sort(key=lambda x: x["count"])
-    pred_color = color_stats[0]["color"] # 开得最少的
-    
-    latest_expect = records[0]["expect"]
-    try:
-        next_expect = str(int(latest_expect) + 1)
-    except:
-        next_expect = "下一"
-        
+    color_scores.sort(key=lambda x: x["score"], reverse=True)
+    pred_color = color_scores[0]["color"]
+
     stats = {
         "big_count": big_count,
         "small_count": small_count,
@@ -192,9 +351,33 @@ def analyze_and_predict():
         "green_count": green_count,
         "pred_big_small": pred_big_small,
         "pred_odd_even": pred_odd_even,
-        "pred_color": pred_color
+        "pred_color": pred_color,
+        
+        "bs_mr": int(bs_mr * 100),
+        "bs_om": int(bs_om * 100),
+        "bs_tr": int(bs_tr * 100),
+        "oe_mr": int(oe_mr * 100),
+        "oe_om": int(oe_om * 100),
+        "oe_tr": int(oe_tr * 100),
+        "col_red_score": int(score_red * 100),
+        "col_blue_score": int(score_blue * 100),
+        "col_green_score": int(score_green * 100)
     }
-    
+    return stats
+
+# 基于最新50期开奖记录做统计算法，预测下一期的【大小、单双、波色】
+def analyze_and_predict():
+    records = history_db["records"]
+    stats = analyze_and_predict_advanced(records, 0)
+    if not stats:
+        return None, None
+        
+    latest_expect = records[0]["expect"]
+    try:
+        next_expect = str(int(latest_expect) + 1)
+    except:
+        next_expect = "下一"
+        
     return next_expect, stats
 
 # 校验历史中特定位置的单期预测结果 (index为0代表最新一期，用index+1到index+50期的数据做模型，预测本期结果)
@@ -202,37 +385,13 @@ def verify_prediction_at_index(records, index):
     if len(records) < index + 51:
         return None
         
-    target_records = records[index+1 : index+51]
-    
-    big_count = 0
-    small_count = 0
-    odd_count = 0
-    even_count = 0
-    red_count = 0
-    blue_count = 0
-    green_count = 0
-    
-    for r in target_records:
-        spec = r.get("special_num", 0)
-        if spec != 49:
-            if spec >= 25: big_count += 1
-            else: small_count += 1
-        if spec % 2 != 0: odd_count += 1
-        else: even_count += 1
-        if spec in RED_WAVE: red_count += 1
-        elif spec in BLUE_WAVE: blue_count += 1
-        elif spec in GREEN_WAVE: green_count += 1
+    stats = analyze_and_predict_advanced(records, index + 1)
+    if not stats:
+        return None
         
-    pred_big_small = "🔥 大" if big_count < small_count else "❄️ 小"
-    pred_odd_even = "⚡ 单" if odd_count < even_count else "🌙 双"
-    
-    color_stats = [
-        {"color": "🔴 红波", "count": red_count},
-        {"color": "🔵 蓝波", "count": blue_count},
-        {"color": "🟢 绿波", "count": green_count}
-    ]
-    color_stats.sort(key=lambda x: x["count"])
-    pred_color = color_stats[0]["color"]
+    pred_big_small = stats["pred_big_small"]
+    pred_odd_even = stats["pred_odd_even"]
+    pred_color = stats["pred_color"]
     
     actual_record = records[index]
     actual_spec = actual_record.get("special_num", 0)
@@ -386,18 +545,13 @@ def format_broadcast_message(latest_record, stats, next_expect):
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{last_verify_text}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b>最近 50 期冷热数据统计</b>\n"
-        f" ├ <b>大小概率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\n"
-        f" ├ <b>单双概率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\n"
-        f" └ <b>波色频率</b>：{stats['red_count']} 红 | {stats['blue_count']} 蓝 | {stats['green_count']} 绿\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🧠 <b>均值回归算法 · 智能推荐</b>\n"
+        f"🧠 <b>多因子交叉规律决策系统 · 智能推荐</b>\n"
         f"🎯 <b>下期预测期数</b>：<code>第 {next_expect} 期</code>\n\n"
-        f"👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】 <i>(冷热对冲)</i>\n"
-        f"👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】 <i>(奇偶修正)</i>\n"
-        f"👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】 <i>(频率回补)</i>\n"
+        f"👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】 <i>(大小遗漏对冲 + 均值回归)</i>\n"
+        f"👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】 <i>(奇偶转移概率 + 均衡修正)</i>\n"
+        f"👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】 <i>(马尔可夫链 + 极限频率回补)</i>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🍀 <i>统计规律基于大数定律，仅供参考，请理性娱乐！</i>"
+        f"🍀 <i>统计规律基于多重混沌算法，仅供参考，请理性娱乐！</i>"
     )
     return msg
 
@@ -412,17 +566,12 @@ def format_predict_message(stats, next_expect):
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{last_verify_text}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b>冷热概率分布 (50期)</b>\n"
-        f" ├ <b>大小概率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\n"
-        f" ├ <b>单双概率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\n"
-        f" └ <b>波色频率</b>：{stats['red_count']} 红 | {stats['blue_count']} 蓝 | {stats['green_count']} 绿\n"
+        f"🧠 <b>多因子规律决策系统 · 智能预测</b>\n"
+        f" 👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】 <i>(综合均值与遗漏分析)</i>\n"
+        f" 👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】 <i>(马尔可夫状态转移)</i>\n"
+        f" 👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】 <i>(多因子冷热加权回补)</i>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🧠 <b>均值回归算法预测推荐</b>\n"
-        f" 👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】\n"
-        f" 👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】\n"
-        f" 👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🍀 <i>统计规律仅供参考，请理性娱乐！</i>"
+        f"🍀 <i>多因子规律计算仅供参考，请理性娱乐！</i>"
     )
     return msg
 

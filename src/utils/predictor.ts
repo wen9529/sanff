@@ -94,9 +94,31 @@ export interface StatisticalSummary {
   predictedOddEven: string;
   predictedColor: string;
   nextExpect: string;
+  
+  // Advanced pattern indicators (values from -100 to +100 or 0 to 100)
+  bs_mr: number;
+  bs_om: number;
+  bs_tr: number;
+  oe_mr: number;
+  oe_om: number;
+  oe_tr: number;
+  col_red_score: number;
+  col_blue_score: number;
+  col_green_score: number;
 }
 
 export function runStatisticalPrediction(history: MockDrawRecord[]): StatisticalSummary {
+  if (history.length < 50) {
+    return {
+      bigCount: 0, smallCount: 0, oddCount: 0, evenCount: 0, redCount: 0, blueCount: 0, greenCount: 0,
+      predictedBigSmall: "小", predictedOddEven: "双", predictedColor: "🔴 红波", nextExpect: "20260717051",
+      bs_mr: 0, bs_om: 0, bs_tr: 0, oe_mr: 0, oe_om: 0, oe_tr: 0, col_red_score: 0, col_blue_score: 0, col_green_score: 0
+    };
+  }
+
+  const targetRecords = history.slice(0, 50);
+
+  // 1. Basic Stats Counts
   let bigCount = 0;
   let smallCount = 0;
   let oddCount = 0;
@@ -105,36 +127,207 @@ export function runStatisticalPrediction(history: MockDrawRecord[]): Statistical
   let blueCount = 0;
   let greenCount = 0;
 
-  history.forEach(rec => {
+  targetRecords.forEach(rec => {
     const specNum = rec.specialNumber.number;
-    
     // Big/Small
     if (specNum !== 49) {
       if (specNum >= 25) bigCount++;
       else smallCount++;
     }
-    
     // Odd/Even
     if (specNum % 2 !== 0) oddCount++;
     else evenCount++;
-    
     // Color Wave
     if (RED_WAVE.includes(specNum)) redCount++;
     else if (BLUE_WAVE.includes(specNum)) blueCount++;
     else if (GREEN_WAVE.includes(specNum)) greenCount++;
   });
 
-  // Calculate Regression to Mean
-  const predictedBigSmall = bigCount < smallCount ? '大' : '小';
-  const predictedOddEven = oddCount < evenCount ? '单' : '双';
-  
-  const colors = [
-    { name: '红波', count: redCount, emoji: '🔴' },
-    { name: '蓝波', count: blueCount, emoji: '🔵' },
-    { name: '绿波', count: greenCount, emoji: '🟢' }
+  // 2. Omission analysis
+  let bigOmission = 0;
+  let smallOmission = 0;
+  let oddOmission = 0;
+  let evenOmission = 0;
+  let redOmission = 0;
+  let blueOmission = 0;
+  let greenOmission = 0;
+
+  // Big / Small omission
+  for (let i = 0; i < targetRecords.length; i++) {
+    const spec = targetRecords[i].specialNumber.number;
+    if (spec === 49) continue;
+    if (spec >= 25) break;
+    smallOmission++;
+  }
+  for (let i = 0; i < targetRecords.length; i++) {
+    const spec = targetRecords[i].specialNumber.number;
+    if (spec === 49) continue;
+    if (spec < 25) break;
+    bigOmission++;
+  }
+
+  // Odd / Even omission
+  for (let i = 0; i < targetRecords.length; i++) {
+    const spec = targetRecords[i].specialNumber.number;
+    if (spec % 2 !== 0) break;
+    oddOmission++;
+  }
+  for (let i = 0; i < targetRecords.length; i++) {
+    const spec = targetRecords[i].specialNumber.number;
+    if (spec % 2 === 0) break;
+    evenOmission++;
+  }
+
+  // Color omission
+  for (let i = 0; i < targetRecords.length; i++) {
+    const spec = targetRecords[i].specialNumber.number;
+    if (RED_WAVE.includes(spec)) break;
+    redOmission++;
+  }
+  for (let i = 0; i < targetRecords.length; i++) {
+    const spec = targetRecords[i].specialNumber.number;
+    if (BLUE_WAVE.includes(spec)) break;
+    blueOmission++;
+  }
+  for (let i = 0; i < targetRecords.length; i++) {
+    const spec = targetRecords[i].specialNumber.number;
+    if (GREEN_WAVE.includes(spec)) break;
+    greenOmission++;
+  }
+
+  // 3. Markov chain transitions
+  let bigToBig = 0;
+  let bigToSmall = 0;
+  let smallToBig = 0;
+  let smallToSmall = 0;
+
+  let oddToOdd = 0;
+  let oddToEven = 0;
+  let evenToOdd = 0;
+  let evenToEven = 0;
+
+  let redToRed = 0;
+  let redToBlue = 0;
+  let redToGreen = 0;
+  let blueToRed = 0;
+  let blueToBlue = 0;
+  let blueToGreen = 0;
+  let greenToRed = 0;
+  let greenToBlue = 0;
+  let greenToGreen = 0;
+
+  for (let i = targetRecords.length - 2; i >= 0; i--) {
+    const prevRec = targetRecords[i + 1];
+    const currRec = targetRecords[i];
+
+    const pSpec = prevRec.specialNumber.number;
+    const cSpec = currRec.specialNumber.number;
+
+    // Big/Small transitions
+    if (pSpec !== 49 && cSpec !== 49) {
+      if (pSpec >= 25) {
+        if (cSpec >= 25) bigToBig++;
+        else bigToSmall++;
+      } else {
+        if (cSpec >= 25) smallToBig++;
+        else smallToSmall++;
+      }
+    }
+
+    // Odd/Even transitions
+    if (pSpec % 2 !== 0) {
+      if (cSpec % 2 !== 0) oddToOdd++;
+      else oddToEven++;
+    } else {
+      if (cSpec % 2 !== 0) evenToOdd++;
+      else evenToEven++;
+    }
+
+    // Color transitions
+    const pColor = RED_WAVE.includes(pSpec) ? 'red' : BLUE_WAVE.includes(pSpec) ? 'blue' : 'green';
+    const cColor = RED_WAVE.includes(cSpec) ? 'red' : BLUE_WAVE.includes(cSpec) ? 'blue' : 'green';
+
+    if (pColor === 'red') {
+      if (cColor === 'red') redToRed++;
+      else if (cColor === 'blue') redToBlue++;
+      else redToGreen++;
+    } else if (pColor === 'blue') {
+      if (cColor === 'red') blueToRed++;
+      else if (cColor === 'blue') blueToBlue++;
+      else blueToGreen++;
+    } else {
+      if (cColor === 'red') greenToRed++;
+      else if (cColor === 'blue') greenToBlue++;
+      else greenToGreen++;
+    }
+  }
+
+  // 4. Combined Weight Decisions
+  const bs_mr = (smallCount - bigCount) / 50.0;
+  const bs_om = (bigOmission - smallOmission) * 0.1;
+  const latestSpec = targetRecords[0].specialNumber.number;
+  let bs_tr = 0.0;
+  if (latestSpec !== 49) {
+    if (latestSpec >= 25) {
+      bs_tr = bigToBig > bigToSmall ? 0.5 : -0.5;
+    } else {
+      bs_tr = smallToBig > smallToSmall ? 0.5 : -0.5;
+    }
+  }
+  const bs_score = 0.35 * bs_mr + 0.35 * bs_om + 0.30 * bs_tr;
+  const predictedBigSmall = bs_score >= 0 ? '大' : '小';
+
+  // Odd/Even score
+  const oe_mr = (evenCount - oddCount) / 50.0;
+  const oe_om = (oddOmission - evenOmission) * 0.1;
+  let oe_tr = 0.0;
+  if (latestSpec % 2 !== 0) {
+    oe_tr = oddToOdd > oddToEven ? 0.5 : -0.5;
+  } else {
+    oe_tr = evenToOdd > evenToEven ? 0.5 : -0.5;
+  }
+  const oe_score = 0.35 * oe_mr + 0.35 * oe_om + 0.30 * oe_tr;
+  const predictedOddEven = oe_score >= 0 ? '单' : '双';
+
+  // Color scores
+  const mr_red = (50 - redCount) / 50.0;
+  const mr_blue = (50 - blueCount) / 50.0;
+  const mr_green = (50 - greenCount) / 50.0;
+
+  const om_red_score = redOmission * 0.15;
+  const om_blue_score = blueOmission * 0.15;
+  const om_green_score = greenOmission * 0.15;
+
+  const latestColor = RED_WAVE.includes(latestSpec) ? 'red' : BLUE_WAVE.includes(latestSpec) ? 'blue' : 'green';
+  let tr_red = 0, tr_blue = 0, tr_green = 0;
+  if (latestColor === 'red') {
+    const total_tr = Math.max(1, redToRed + redToBlue + redToGreen);
+    tr_red = redToRed / total_tr;
+    tr_blue = redToBlue / total_tr;
+    tr_green = redToGreen / total_tr;
+  } else if (latestColor === 'blue') {
+    const total_tr = Math.max(1, blueToRed + blueToBlue + blueToGreen);
+    tr_red = blueToRed / total_tr;
+    tr_blue = blueToBlue / total_tr;
+    tr_green = blueToGreen / total_tr;
+  } else {
+    const total_tr = Math.max(1, greenToRed + greenToBlue + greenToGreen);
+    tr_red = greenToRed / total_tr;
+    tr_blue = greenToBlue / total_tr;
+    tr_green = greenToGreen / total_tr;
+  }
+
+  const score_red = 0.35 * mr_red + 0.35 * om_red_score + 0.30 * tr_red;
+  const score_blue = 0.35 * mr_blue + 0.35 * om_blue_score + 0.30 * tr_blue;
+  const score_green = 0.35 * mr_green + 0.35 * om_green_score + 0.30 * tr_green;
+
+  const colorScores = [
+    { name: '红波', score: score_red, emoji: '🔴' },
+    { name: '蓝波', score: score_blue, emoji: '🔵' },
+    { name: '绿波', score: score_green, emoji: '🟢' }
   ];
-  colors.sort((a, b) => a.count - b.count);
-  const predictedColor = `${colors[0].emoji} ${colors[0].name}`;
+  colorScores.sort((a, b) => b.score - a.score);
+  const predictedColor = `${colorScores[0].emoji} ${colorScores[0].name}`;
 
   const latestExpect = history[0]?.expect || "20260717050";
   const nextExpect = (parseInt(latestExpect) + 1).toString();
@@ -150,7 +343,17 @@ export function runStatisticalPrediction(history: MockDrawRecord[]): Statistical
     predictedBigSmall,
     predictedOddEven,
     predictedColor,
-    nextExpect
+    nextExpect,
+    
+    bs_mr: Math.round(bs_mr * 100),
+    bs_om: Math.round(bs_om * 100),
+    bs_tr: Math.round(bs_tr * 100),
+    oe_mr: Math.round(oe_mr * 100),
+    oe_om: Math.round(oe_om * 100),
+    oe_tr: Math.round(oe_tr * 100),
+    col_red_score: Math.round(score_red * 100),
+    col_blue_score: Math.round(score_blue * 100),
+    col_green_score: Math.round(score_green * 100)
   };
 }
 
@@ -168,15 +371,10 @@ export function generateTelegramPost(stats: StatisticalSummary, latestRecord: Mo
 🎯 <b>特码解析</b>：【 <b>${formatNum(specNum)}</b> 】号 (${specColorEmoji} | ${specBigSmall} | ${specOddEven})
 ━━━━━━━━━━━━━━━━━━━
 
-📊 <b>最新50期综合概率分布</b>：
- ├ <b>大小比率</b>: 大 ${stats.bigCount}次 (${stats.bigCount * 2}%) | 小 ${stats.smallCount}次 (${stats.smallCount * 2}%)
- ├ <b>单双比率</b>: 单 ${stats.oddCount}次 (${stats.oddCount * 2}%) | 双 ${stats.evenCount}次 (${stats.evenCount * 2}%)
- └ <b>波色频率</b>: 红 ${stats.redCount}次 | 蓝 ${stats.blueCount}次 | 绿 ${stats.greenCount}次
+🧠 <b>多因子交叉规律决策系统 · 智能推荐</b> (第 <b>${stats.nextExpect}</b> 期)：
+ 🎯 <b>推荐大小</b>：【 <b>${stats.predictedBigSmall === '大' ? '🔥 大' : '❄️ 小'}</b> 】<i>(大小遗漏对冲 + 均值回归)</i>
+ 🎯 <b>推荐单双</b>：【 <b>${stats.predictedOddEven === '单' ? '⚡ 单' : '🌙 双'}</b> 】<i>(奇偶转移概率 + 均衡修正)</i>
+ 🎯 <b>推荐波色</b>：【 <b>${stats.predictedColor}</b> 】<i>(马尔可夫链 + 极限频率回补)</i>
 
-🧠 <b>均值回归算法推荐</b> (第 <b>${stats.nextExpect}</b> 期)：
- 🎯 <b>推荐大小</b>：【 <b>${stats.predictedBigSmall === '大' ? '🔥 大' : '❄️ 小'}</b> 】<i>(历史冷热对冲)</i>
- 🎯 <b>推荐单双</b>：【 <b>${stats.predictedOddEven === '单' ? '⚡ 单' : '🌙 双'}</b> 】<i>(奇偶均衡修正)</i>
- 🎯 <b>推荐波色</b>：【 <b>${stats.predictedColor}</b> 】<i>(极限频率回补)</i>
-
-🍀 <i>统计规律仅供参考，请理性娱乐！</i> 🍀`;
+🍀 <i>统计规律基于多重混沌算法，仅供参考，请理性娱乐！</i> 🍀`;
 }

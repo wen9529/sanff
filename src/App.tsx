@@ -342,36 +342,86 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Frequency progress bars */}
+                  {/* Advanced Multi-Factor Decisive Indicators */}
                   {stats && (
-                    <div className="space-y-2 bg-slate-950/30 p-3.5 rounded-lg border border-slate-800/50 text-[11px]">
-                      <div className="flex items-center justify-between text-slate-400 mb-1">
-                        <span>大小比重分布 (不含49和值)</span>
-                        <span className="font-mono text-white">大 {stats.bigCount} : 小 {stats.smallCount}</span>
-                      </div>
-                      <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex border border-slate-800">
-                        <div className="bg-amber-500 h-full transition-all" style={{ width: `${(stats.bigCount / (stats.bigCount + stats.smallCount)) * 100}%` }}></div>
-                        <div className="bg-sky-500 h-full transition-all" style={{ width: `${(stats.smallCount / (stats.bigCount + stats.smallCount)) * 100}%` }}></div>
+                    <div className="space-y-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80 text-[11px]">
+                      <div className="text-xs font-bold text-slate-300 border-b border-slate-800/80 pb-1 flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        <span>多因子决策模型指标</span>
                       </div>
 
-                      <div className="flex items-center justify-between text-slate-400 pt-1.5 mb-1">
-                        <span>单双比重分布</span>
-                        <span className="font-mono text-white">单 {stats.oddCount} : 双 {stats.evenCount}</span>
-                      </div>
-                      <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex border border-slate-800">
-                        <div className="bg-yellow-400 h-full transition-all" style={{ width: `${(stats.oddCount / (stats.oddCount + stats.evenCount)) * 100}%` }}></div>
-                        <div className="bg-purple-500 h-full transition-all" style={{ width: `${(stats.evenCount / (stats.oddCount + stats.evenCount)) * 100}%` }}></div>
+                      {/* Big/Small indicators */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                          <span>大小决策因子得分</span>
+                          <span className={`font-mono font-bold ${stats.predictedBigSmall === '大' ? 'text-amber-400' : 'text-sky-400'}`}>
+                            当前偏向: {stats.predictedBigSmall === '大' ? '🔥 大' : '❄️ 小'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5 text-center text-[9px]">
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">均值回归</span>
+                            <span className="font-mono text-slate-300 font-bold">{stats.bs_mr > 0 ? `+${stats.bs_mr}` : stats.bs_mr}</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">遗漏补偿</span>
+                            <span className="font-mono text-slate-300 font-bold">{stats.bs_om > 0 ? `+${stats.bs_om}` : stats.bs_om}</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">状态转移</span>
+                            <span className="font-mono text-slate-300 font-bold">{stats.bs_tr > 0 ? `+${stats.bs_tr}` : stats.bs_tr}</span>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-slate-400 pt-1.5 mb-1">
-                        <span>波色频率分布</span>
-                        <span className="font-mono text-white text-[10px]">红 {stats.redCount} | 蓝 {stats.blueCount} | 绿 {stats.greenCount}</span>
+                      {/* Odd/Even indicators */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                          <span>单双决策因子得分</span>
+                          <span className={`font-mono font-bold ${stats.predictedOddEven === '单' ? 'text-yellow-400' : 'text-purple-400'}`}>
+                            当前偏向: {stats.predictedOddEven === '单' ? '⚡ 单' : '🌙 双'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5 text-center text-[9px]">
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">均值回归</span>
+                            <span className="font-mono text-slate-300 font-bold">{stats.oe_mr > 0 ? `+${stats.oe_mr}` : stats.oe_mr}</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">遗漏补偿</span>
+                            <span className="font-mono text-slate-300 font-bold">{stats.oe_om > 0 ? `+${stats.oe_om}` : stats.oe_om}</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">状态转移</span>
+                            <span className="font-mono text-slate-300 font-bold">{stats.oe_tr > 0 ? `+${stats.oe_tr}` : stats.oe_tr}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex border border-slate-800">
-                        <div className="bg-rose-500 h-full transition-all" style={{ width: `${(stats.redCount / (stats.redCount + stats.blueCount + stats.greenCount)) * 100}%` }}></div>
-                        <div className="bg-sky-500 h-full transition-all" style={{ width: `${(stats.blueCount / (stats.redCount + stats.blueCount + stats.greenCount)) * 100}%` }}></div>
-                        <div className="bg-emerald-500 h-full transition-all" style={{ width: `${(stats.greenCount / (stats.redCount + stats.blueCount + stats.greenCount)) * 100}%` }}></div>
+
+                      {/* Color indicators */}
+                      <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                          <span>波色决策加权评分</span>
+                          <span className="font-mono font-bold text-emerald-400">
+                            当前首选: {stats.predictedColor}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5 text-center text-[9px]">
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">🔴 红波评分</span>
+                            <span className="font-mono text-rose-400 font-bold">{stats.col_red_score}</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">🔵 蓝波评分</span>
+                            <span className="font-mono text-sky-400 font-bold">{stats.col_blue_score}</span>
+                          </div>
+                          <div className="bg-slate-900 border border-slate-800 p-1.5 rounded">
+                            <span className="text-slate-500 block">🟢 绿波评分</span>
+                            <span className="font-mono text-emerald-400 font-bold">{stats.col_green_score}</span>
+                          </div>
+                        </div>
                       </div>
+
                     </div>
                   )}
 
@@ -506,23 +556,15 @@ export default function App() {
                         <div className="text-slate-400 mb-3">🎯 <b>特码解析</b>：【 <b>{formatNum(mockHistory[0].specialNumber.number)}</b> 】号 ({RED_WAVE.includes(mockHistory[0].specialNumber.number) ? '🔴' : BLUE_WAVE.includes(mockHistory[0].specialNumber.number) ? '🔵' : '🟢'} | {mockHistory[0].specialNumber.number === 49 ? '和' : mockHistory[0].specialNumber.number >= 25 ? '大' : '小'} | {mockHistory[0].specialNumber.number % 2 !== 0 ? '单' : '双'})</div>
                         
                         <div className="border-t border-slate-850 my-2.5"></div>
-                        <div className="text-slate-200 font-bold mb-1.5">📊 <b>最新50期综合概率分布</b>：</div>
-                        <div className="text-[10px] text-slate-400 space-y-0.5 ml-2">
-                          <div> ├ <b>大小比率</b>: 大 {stats.bigCount}次 ({stats.bigCount * 2}%) | 小 {stats.smallCount}次 ({stats.smallCount * 2}%)</div>
-                          <div> ├ <b>单双比率</b>: 单 {stats.oddCount}次 ({stats.oddCount * 2}%) | 双 {stats.evenCount}次 ({stats.evenCount * 2}%)</div>
-                          <div> └ <b>波色频率</b>: 红 {stats.redCount}次 | 蓝 {stats.blueCount}次 | 绿 {stats.greenCount}次</div>
-                        </div>
-
-                        <div className="border-t border-slate-850 my-2.5"></div>
-                        <div className="text-slate-200 font-bold mb-1.5">🧠 <b>均值回归算法推荐</b> (第 <b>{stats.nextExpect}</b> 期)：</div>
+                        <div className="text-slate-200 font-bold mb-1.5">🧠 <b>多因子交叉规律决策系统 · 智能推荐</b> (第 <b>{stats.nextExpect}</b> 期)：</div>
                         <div className="text-[10px] ml-2 space-y-1">
-                          <div> 🎯 <b>推荐大小</b>：【 <strong className="text-amber-400">{stats.predictedBigSmall === '大' ? '🔥 大' : '❄️ 小'}</strong> 】<i>(历史冷热对冲)</i></div>
-                          <div> 🎯 <b>推荐单双</b>：【 <strong className="text-amber-400">{stats.predictedOddEven === '单' ? '⚡ 单' : '🌙 双'}</strong> 】<i>(奇偶均衡修正)</i></div>
-                          <div> 🎯 <b>推荐波色</b>：【 <strong className="text-emerald-400">{stats.predictedColor}</strong> 】<i>(极限频率回补)</i></div>
+                          <div> 🎯 <b>推荐大小</b>：【 <strong className="text-amber-400">{stats.predictedBigSmall === '大' ? '🔥 大' : '❄️ 小'}</strong> 】<i>(大小遗漏对冲 + 均值回归)</i></div>
+                          <div> 🎯 <b>推荐单双</b>：【 <strong className="text-amber-400">{stats.predictedOddEven === '单' ? '⚡ 单' : '🌙 双'}</strong> 】<i>(奇偶转移概率 + 均衡修正)</i></div>
+                          <div> 🎯 <b>推荐波色</b>：【 <strong className="text-emerald-400">{stats.predictedColor}</strong> 】<i>(马尔可夫链 + 极限频率回补)</i></div>
                         </div>
 
                         <div className="border-t border-slate-850 my-2.5"></div>
-                        <div className="text-center font-bold text-emerald-400 mt-2">🍀 <i>统计规律仅供参考，请理性娱乐！</i> 🍀</div>
+                        <div className="text-center font-bold text-emerald-400 mt-2">🍀 <i>统计规律基于多重混沌算法，仅供参考，请理性娱乐！</i> 🍀</div>
                       </div>
                       <div className="text-[9px] text-slate-500 text-right mt-2 select-none">
                         刚刚 • 👁️ 1.2k
