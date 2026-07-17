@@ -197,6 +197,145 @@ def analyze_and_predict():
     
     return next_expect, stats
 
+# 校验历史中特定位置的单期预测结果 (index为0代表最新一期，用index+1到index+50期的数据做模型，预测本期结果)
+def verify_prediction_at_index(records, index):
+    if len(records) < index + 51:
+        return None
+        
+    target_records = records[index+1 : index+51]
+    
+    big_count = 0
+    small_count = 0
+    odd_count = 0
+    even_count = 0
+    red_count = 0
+    blue_count = 0
+    green_count = 0
+    
+    for r in target_records:
+        spec = r.get("special_num", 0)
+        if spec != 49:
+            if spec >= 25: big_count += 1
+            else: small_count += 1
+        if spec % 2 != 0: odd_count += 1
+        else: even_count += 1
+        if spec in RED_WAVE: red_count += 1
+        elif spec in BLUE_WAVE: blue_count += 1
+        elif spec in GREEN_WAVE: green_count += 1
+        
+    pred_big_small = "🔥 大" if big_count < small_count else "❄️ 小"
+    pred_odd_even = "⚡ 单" if odd_count < even_count else "🌙 双"
+    
+    color_stats = [
+        {"color": "🔴 红波", "count": red_count},
+        {"color": "🔵 蓝波", "count": blue_count},
+        {"color": "🟢 绿波", "count": green_count}
+    ]
+    color_stats.sort(key=lambda x: x["count"])
+    pred_color = color_stats[0]["color"]
+    
+    actual_record = records[index]
+    actual_spec = actual_record.get("special_num", 0)
+    actual_big_small = get_big_small(actual_spec)
+    actual_odd_even = get_odd_even(actual_spec)
+    actual_color = get_color(actual_spec)
+    
+    bs_correct = (pred_big_small == actual_big_small) if actual_spec != 49 else False
+    oe_correct = (pred_odd_even == actual_odd_even)
+    color_correct = (pred_color == actual_color)
+    
+    return {
+        "expect": actual_record.get("expect"),
+        "special_num": actual_spec,
+        "pred_big_small": pred_big_small,
+        "pred_odd_even": pred_odd_even,
+        "pred_color": pred_color,
+        "actual_big_small": actual_big_small,
+        "actual_odd_even": actual_odd_even,
+        "actual_color": actual_color,
+        "bs_correct": bs_correct,
+        "oe_correct": oe_correct,
+        "color_correct": color_correct
+    }
+
+# 格式化上期预测的校验文本
+def get_last_prediction_verify_text():
+    records = history_db["records"]
+    res = verify_prediction_at_index(records, 0)
+    if not res:
+        return "📊 <b>上期预测校验</b>：暂无 (数据需满 51 期以分析校验上期)"
+        
+    bs_symbol = "✅ 命中" if res["bs_correct"] else "❌ 未中"
+    oe_symbol = "✅ 命中" if res["oe_correct"] else "❌ 未中"
+    color_symbol = "✅ 命中" if res["color_correct"] else "❌ 未中"
+    
+    text = (
+        f"📊 <b>上期 (第 {res['expect']} 期) 预测实测校验</b>：\\n"
+        f" ├ <b>大小推荐</b>：【 {res['pred_big_small']} 】 ➔ {bs_symbol} (实际: {res['actual_big_small']})\\n"
+        f" ├ <b>单双推荐</b>：【 {res['pred_odd_even']} 】 ➔ {oe_symbol} (实际: {res['actual_odd_even']})\\n"
+        f" └ <b>波色推荐</b>：【 {res['pred_color']} 】 ➔ {color_symbol} (实际: {res['actual_color']})"
+    )
+    return text
+
+# 获取预测历史校验记录与胜率统计
+def get_prediction_history_text(limit=10):
+    records = history_db["records"]
+    total = len(records)
+    if total < 51:
+        return f"⚠️ <b>历史预测校验记录</b>：当前今日累积开奖仅有 {total}/51 期，尚不支持生成历史预测校验。"
+        
+    max_verify_index = min(limit, total - 50)
+    
+    lines = []
+    correct_bs_count = 0
+    correct_oe_count = 0
+    correct_color_count = 0
+    total_validated = 0
+    
+    for i in range(max_verify_index):
+        res = verify_prediction_at_index(records, i)
+        if res:
+            bs_symbol = "✅" if res["bs_correct"] else "❌"
+            oe_symbol = "✅" if res["oe_correct"] else "❌"
+            col_symbol = "✅" if res["color_correct"] else "❌"
+            
+            short_pred_col = res["pred_color"].replace("波", "")
+            short_act_col = res["actual_color"].replace("波", "")
+            
+            line = (
+                f"• <b>第 {res['expect'][-3:]} 期</b> 特码【<b>{res['special_num']:02d}</b>】\\n"
+                f"  ├ 大小: {res['pred_big_small']} ➔ {bs_symbol} {res['actual_big_small']}\\n"
+                f"  ├ 单双: {res['pred_odd_even']} ➔ {oe_symbol} {res['actual_odd_even']}\\n"
+                f"  └ 波色: {short_pred_col} ➔ {col_symbol} {short_act_col}"
+            )
+            lines.append(line)
+            
+            if res["bs_correct"]: correct_bs_count += 1
+            if res["oe_correct"]: correct_oe_count += 1
+            if res["color_correct"]: correct_color_count += 1
+            total_validated += 1
+            
+    if not lines:
+        return "⚠️ 暂无满足校验条件的预测历史。"
+        
+    bs_rate = int((correct_bs_count / total_validated) * 100) if total_validated > 0 else 0
+    oe_rate = int((correct_oe_count / total_validated) * 100) if total_validated > 0 else 0
+    col_rate = int((correct_color_count / total_validated) * 100) if total_validated > 0 else 0
+    
+    msg = (
+        f"📜 <b>澳门三分六合彩 · 历史预测胜率榜</b> 📜\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"📊 <b>最近 {total_validated} 期模型准确率统计：</b>\\n"
+        f" 🎯 <b>大小胜率</b>：{correct_bs_count}/{total_validated} (<b>{bs_rate}%</b>)\\n"
+        f" 🎯 <b>单双胜率</b>：{correct_oe_count}/{total_validated} (<b>{oe_rate}%</b>)\\n"
+        f" 🎯 <b>波色胜率</b>：{correct_color_count}/{total_validated} (<b>{col_rate}%</b>)\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n" + 
+        "\\n\\n".join(lines) + 
+        f"\\n━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"🍀 <i>温馨提示：历史胜率仅代表模型在大数定律下的拟合，非稳赢指标，请理性参考！</i>"
+    )
+    return msg
+
 # 获取今日已开期数进度的辅助函数 (以期号最后3位为准，如20260717357代表第357期)
 def get_today_progress(expect_str):
     if expect_str and len(expect_str) >= 11 and expect_str[-3:].isdigit():
@@ -232,48 +371,57 @@ def format_broadcast_message(latest_record, stats, next_expect):
     else:
         progress_text = f"已装载 <b>{len(history_db['records'])}</b> 期"
         
+    # 上期预测校验文本
+    last_verify_text = get_last_prediction_verify_text()
+        
     msg = (
-        f"🎰 <b>澳门三分六合彩 · 实时开奖广播</b> 🎰\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📅 <b>当前期号</b>：<code>第 {expect} 期</code>\n"
-        f"⏱️ <b>今日进度</b>：{progress_text}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔴 🔵 🟢 <b>最新中奖号码</b> 🟢 🔵 🔴\n\n"
-        f"👉  {balls_formatted}\n\n"
-        f"🔮 <b>特码解析</b>：【 <b>{spec:02d}</b> 】号 · {get_color(spec)} · {get_big_small(spec)} · {get_odd_even(spec)}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b>最近 50 期冷热数据统计</b>\n"
-        f" ├ <b>大小概率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\n"
-        f" ├ <b>单双概率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\n"
-        f" └ <b>波色频率</b>：{stats['red_count']} 红 | {stats['blue_count']} 蓝 | {stats['green_count']} 绿\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🧠 <b>均值回归算法 · 智能推荐</b>\n"
-        f"🎯 <b>下期预测期数</b>：<code>第 {next_expect} 期</code>\n\n"
-        f"👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】 <i>(冷热对冲)</i>\n"
-        f"👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】 <i>(奇偶修正)</i>\n"
-        f"👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】 <i>(频率回补)</i>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎰 <b>澳门三分六合彩 · 实时开奖广播</b> 🎰\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"📅 <b>当前期号</b>：<code>第 {expect} 期</code>\\n"
+        f"⏱️ <b>今日进度</b>：{progress_text}\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"🔴 🔵 🟢 <b>最新中奖号码</b> 🟢 🔵 🔴\\n\\n"
+        f"👉  {balls_formatted}\\n\\n"
+        f"🔮 <b>特码解析</b>：【 <b>{spec:02d}</b> 】号 · {get_color(spec)} · {get_big_small(spec)} · {get_odd_even(spec)}\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"{last_verify_text}\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"📊 <b>最近 50 期冷热数据统计</b>\\n"
+        f" ├ <b>大小概率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\\n"
+        f" ├ <b>单双概率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\\n"
+        f" └ <b>波色频率</b>：{stats['red_count']} 红 | {stats['blue_count']} 蓝 | {stats['green_count']} 绿\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"🧠 <b>均值回归算法 · 智能推荐</b>\\n"
+        f"🎯 <b>下期预测期数</b>：<code>第 {next_expect} 期</code>\\n\\n"
+        f"👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】 <i>(冷热对冲)</i>\\n"
+        f"👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】 <i>(奇偶修正)</i>\\n"
+        f"👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】 <i>(频率回补)</i>\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
         f"🍀 <i>统计规律基于大数定律，仅供参考，请理性娱乐！</i>"
     )
     return msg
 
 # 格式化精美的手动预测结果
 def format_predict_message(stats, next_expect):
+    last_verify_text = get_last_prediction_verify_text()
+    
     msg = (
-        f"🔮 <b>澳门三分六合彩 · 智能推荐中心</b> 🔮\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🎯 <b>预测目标期数</b>：<code>第 {next_expect} 期</code>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b>冷热概率分布 (50期)</b>\n"
-        f" ├ <b>大小概率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\n"
-        f" ├ <b>单双概率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\n"
-        f" └ <b>波色频率</b>：{stats['red_count']} 红 | {stats['blue_count']} 蓝 | {stats['green_count']} 绿\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🧠 <b>均值回归算法预测推荐</b>\n"
-        f" 👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】\n"
-        f" 👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】\n"
-        f" 👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔮 <b>澳门三分六合彩 · 智能推荐中心</b> 🔮\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"🎯 <b>预测目标期数</b>：<code>第 {next_expect} 期</code>\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"{last_verify_text}\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"📊 <b>冷热概率分布 (50期)</b>\\n"
+        f" ├ <b>大小概率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\\n"
+        f" ├ <b>单双概率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\\n"
+        f" └ <b>波色频率</b>：{stats['red_count']} 红 | {stats['blue_count']} 蓝 | {stats['green_count']} 绿\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"🧠 <b>均值回归算法预测推荐</b>\\n"
+        f" 👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】\\n"
+        f" 👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】\\n"
+        f" 👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
         f"🍀 <i>统计规律仅供参考，请理性娱乐！</i>"
     )
     return msg
@@ -293,13 +441,13 @@ def format_status_message(total, date_str, latest_record):
         latest_text = "今日暂无开奖记录录入"
         
     status_text = (
-        f"⚙️ <b>机器人状态监控中心</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📅 <b>缓存开奖日期</b>：<code>{date_str}</code>\n"
-        f"📊 <b>今日数据进度</b>：{progress_text}\n"
-        f"🎰 <b>最新开奖结果</b>：{latest_text}\n"
-        f"📡 <b>轮询运行状态</b>：🟢 正常运行中 (每 5s/次)\n"
-        f"📢 <b>广播发送渠道</b>：<code>{config.get('channel_id')}</code>\n"
+        f"⚙️ <b>机器人状态监控中心</b>\\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\\n"
+        f"📅 <b>缓存开奖日期</b>：<code>{date_str}</code>\\n"
+        f"📊 <b>今日数据进度</b>：{progress_text}\\n"
+        f"🎰 <b>最新开奖结果</b>：{latest_text}\\n"
+        f"📡 <b>轮询运行状态</b>：🟢 正常运行中 (每 5s/次)\\n"
+        f"📢 <b>广播发送渠道</b>：<code>{config.get('channel_id')}</code>\\n"
         f"━━━━━━━━━━━━━━━━━━━━━"
     )
     return status_text
@@ -497,18 +645,24 @@ def is_admin(user_id):
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
-        "🤖 <b>澳门三分六合彩统计学预测机器人管理员</b>\n\n"
-        "程序已在 Termux 后台稳定启动，每5秒主动拉取最新开奖源。\n"
-        "今日开奖数据将在 <b>每日0点</b> 自动触发清零重建，确保每日统计均值无滞后偏移。\n\n"
-        "📊 <b>系统实时指令：</b>\n"
-        "➡️ /status - 查看当前数据累积进度与最新一期开奖情况\n"
-        "➡️ /predict - [全员] 手动运算并获取下一期预测\n"
-        "➡️ /pullall - [管理员] 立即强制在后台全量重拉 500 期今日历史，100% 对齐防漏\n"
-        "➡️ /broadcast - [管理员] 强制立即生成当前预测并群发到订阅频道\n"
-        "➡️ /reset - [管理员] 立即手动清空清零今日的所有开奖历史\n\n"
+        "🤖 <b>澳门三分六合彩统计学预测机器人管理员</b>\\n\\n"
+        "程序已在 Termux 后台稳定启动，每5秒主动拉取最新开奖源。\\n"
+        "今日开奖数据将在 <b>每日0点</b> 自动触发清零重建，确保每日统计均值无滞后偏移。\\n\\n"
+        "📊 <b>系统实时指令：</b>\\n"
+        "➡️ /status - 查看当前数据累积进度与最新一期开奖情况\\n"
+        "➡️ /predict - [全员] 手动运算并获取下一期预测\\n"
+        "➡️ /history - [全员] 查看最近 10 期预测结果及模型胜率榜\\n"
+        "➡️ /pullall - [管理员] 立即强制在后台全量重拉 500 期今日历史，100% 对齐防漏\\n"
+        "➡️ /broadcast - [管理员] 强制立即生成当前预测并群发到订阅频道\\n"
+        "➡️ /reset - [管理员] 立即手动清空清零今日的所有开奖历史\\n\\n"
         "💡 <i>提示: 本程序专为 Termux 部署打造，自适应自愈网络故障，极致省电省流。</i>"
     )
     bot.reply_to(message, welcome_text)
+
+@bot.message_handler(commands=['history'])
+def handle_history(message):
+    resp = get_prediction_history_text(limit=10)
+    bot.reply_to(message, resp)
 
 @bot.message_handler(commands=['pullall'])
 def handle_pullall(message):
@@ -518,7 +672,7 @@ def handle_pullall(message):
         return
         
     force_refetch = True
-    bot.reply_to(message, "🔄 <b>全量补齐指令已成功向后台发送！</b>\n系统将在下一次轮询中发起 500 条数据全量补齐拉取，100% 修复可能缺失的今日历史记录，请稍等数秒发送 /status 查看最新累计。")
+    bot.reply_to(message, "🔄 <b>全量补齐指令已成功向后台发送！</b>\\n系统将在下一次轮询中发起 500 条数据全量补齐拉取，100% 修复可能缺失的今日历史记录，请稍等数秒发送 /status 查看最新累计。")
 
 @bot.message_handler(commands=['status'])
 def handle_status(message):
