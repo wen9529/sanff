@@ -5,7 +5,7 @@ export const pythonBotCode = `#!/usr/bin/env python3
 - 每5秒自动拉取最新开奖接口 (支持自定源)
 - 每天0点自动清空开奖记录重新累积
 - 累积满50期后自动启动统计学冷热与均值回归算法，预测下一期的【大小、单双、波色】
-- 新期开奖时，自动推送到配置 of Telegram 频道/群组
+- 新期开奖时，自动推送到配置的 Telegram 频道/群组
 """
 
 import os
@@ -19,7 +19,7 @@ import requests
 import telebot
 from telebot import types
 
-# 禁用未验证 HTTPS 请求的警告 (在 Termux 环境下可能因证书链不完整导致请求报错，此举增强兼容性)
+# 禁用未验证 HTTPS 请求的警告
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -45,7 +45,7 @@ def get_color(num):
     if num in BLUE_WAVE: return "🔵 蓝波"
     return "🟢 绿波"
 
-# 判断特码大小 (六合彩 1-24 为小，25-48 为大，49 为和)
+# 判断特码大小
 def get_big_small(num):
     if num == 49:
         return "和"
@@ -89,8 +89,8 @@ bot = telebot.TeleBot(config["bot_token"], parse_mode='HTML')
 
 # 内存数据结构，保存当日历史记录
 history_db = {
-    "date": "",       # 用于跨天清理，格式: YYYY-MM-DD
-    "records": []     # 存放开奖结果字典列表，按期数倒序排 (最新在前)
+    "date": "",       
+    "records": []     
 }
 
 # 加载本地保存的开奖记录
@@ -203,6 +203,15 @@ def get_today_progress(expect_str):
         return int(expect_str[-3:])
     return None
 
+# 获取期数的后三位数值作为期数序号
+def get_expect_period_num(expect_str):
+    if expect_str and len(expect_str) >= 3 and expect_str[-3:].isdigit():
+        return int(expect_str[-3:])
+    return 0
+
+# 全局强制重拉标志
+force_refetch = False
+
 # 格式化精美的开奖及预测广播
 def format_broadcast_message(latest_record, stats, next_expect):
     spec = latest_record["special_num"]
@@ -219,31 +228,31 @@ def format_broadcast_message(latest_record, stats, next_expect):
     # 获取今日已开期数进度
     today_progress = get_today_progress(expect)
     if today_progress:
-        progress_text = f"已开出 <b>{today_progress}</b> / 480 期 (今日首期: <code>001</code>)"
+        progress_text = f"已开出 <b>{today_progress}</b> / 480 期"
     else:
         progress_text = f"已装载 <b>{len(history_db['records'])}</b> 期"
         
     msg = (
-        f"🎰 <b>澳门三分六合彩 · 实时开奖广播</b> 🎰\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"📅 <b>当前开奖期号</b>：<code>第 {expect} 期</code>\\n"
-        f"⏱️ <b>今日开奖进度</b>：{progress_text}\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"🔴 🔵 🟢 <b>最新中奖号码</b> 🟢 🔵 🔴\\n\\n"
-        f"👉  {balls_formatted}\\n\\n"
-        f"🔮 <b>特码解析</b>：【 <b>{spec:02d}</b> 】号 · {get_color(spec)} · {get_big_small(spec)} · {get_odd_even(spec)}\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"📊 <b>历史 50 期冷热数据统计</b>\\n"
-        f" ├ <b>大小比率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\\n"
-        f" ├ <b>单双比率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\\n"
-        f" └ <b>波色频率</b>：🔴 红 {stats['red_count']} 次 | 🔵 蓝 {stats['blue_count']} 次 | 🟢 绿 {stats['green_count']} 次\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"🧠 <b>智能均值回归算法推荐</b>\\n"
-        f"🎯 <b>下期预测期数</b>：<code>第 {next_expect} 期</code>\\n\\n"
-        f"👉 <b>推荐大小</b>：【 <code>{stats['pred_big_small']}</code> 】 <i>(历史冷热对冲)</i>\\n"
-        f"👉 <b>推荐单双</b>：【 <code>{stats['pred_odd_even']}</code> 】 <i>(奇偶均衡修正)</i>\\n"
-        f"👉 <b>推荐波色</b>：【 <code>{stats['pred_color']}</code> 】 <i>(极限频率回补)</i>\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
+        f"🎰 <b>澳门三分六合彩 · 实时开奖广播</b> 🎰\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📅 <b>当前期号</b>：<code>第 {expect} 期</code>\n"
+        f"⏱️ <b>今日进度</b>：{progress_text}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔴 🔵 🟢 <b>最新中奖号码</b> 🟢 🔵 🔴\n\n"
+        f"👉  {balls_formatted}\n\n"
+        f"🔮 <b>特码解析</b>：【 <b>{spec:02d}</b> 】号 · {get_color(spec)} · {get_big_small(spec)} · {get_odd_even(spec)}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>最近 50 期冷热数据统计</b>\n"
+        f" ├ <b>大小概率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\n"
+        f" ├ <b>单双概率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\n"
+        f" └ <b>波色频率</b>：{stats['red_count']} 红 | {stats['blue_count']} 蓝 | {stats['green_count']} 绿\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧠 <b>均值回归算法 · 智能推荐</b>\n"
+        f"🎯 <b>下期预测期数</b>：<code>第 {next_expect} 期</code>\n\n"
+        f"👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】 <i>(冷热对冲)</i>\n"
+        f"👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】 <i>(奇偶修正)</i>\n"
+        f"👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】 <i>(频率回补)</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"🍀 <i>统计规律基于大数定律，仅供参考，请理性娱乐！</i>"
     )
     return msg
@@ -251,21 +260,21 @@ def format_broadcast_message(latest_record, stats, next_expect):
 # 格式化精美的手动预测结果
 def format_predict_message(stats, next_expect):
     msg = (
-        f"🔮 <b>澳门三分六合彩 · 下期推荐中心</b> 🔮\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"🎯 <b>预测目标期数</b>：<code>第 {next_expect} 期</code>\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"📊 <b>冷热概率分布 (50期)</b>\\n"
-        f" ├ <b>大小比率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\\n"
-        f" ├ <b>单双比率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\\n"
-        f" └ <b>波色频率</b>：🔴 红 {stats['red_count']} 次 | 🔵 蓝 {stats['blue_count']} 次 | 🟢 绿 {stats['green_count']} 次\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"🧠 <b>均值回归算法预测推荐</b>\\n"
-        f" 👉 <b>大小推荐</b>：【 <code>{stats['pred_big_small']}</code> 】\\n"
-        f" 👉 <b>单双推荐</b>：【 <code>{stats['pred_odd_even']}</code> 】\\n"
-        f" 👉 <b>波色推荐</b>：【 <code>{stats['pred_color']}</code> 】\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"🍀 <i>统计规律仅供参考，合理控制！</i>"
+        f"🔮 <b>澳门三分六合彩 · 智能推荐中心</b> 🔮\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 <b>预测目标期数</b>：<code>第 {next_expect} 期</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>冷热概率分布 (50期)</b>\n"
+        f" ├ <b>大小概率</b>：大 {stats['big_count']} 次 ({stats['big_count']*2}%) | 小 {stats['small_count']} 次 ({stats['small_count']*2}%)\n"
+        f" ├ <b>单双概率</b>：单 {stats['odd_count']} 次 ({stats['odd_count']*2}%) | 双 {stats['even_count']} 次 ({stats['even_count']*2}%)\n"
+        f" └ <b>波色频率</b>：{stats['red_count']} 红 | {stats['blue_count']} 蓝 | {stats['green_count']} 绿\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🧠 <b>均值回归算法预测推荐</b>\n"
+        f" 👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】\n"
+        f" 👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】\n"
+        f" 👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🍀 <i>统计规律仅供参考，请理性娱乐！</i>"
     )
     return msg
 
@@ -284,14 +293,14 @@ def format_status_message(total, date_str, latest_record):
         latest_text = "今日暂无开奖记录录入"
         
     status_text = (
-        f"⚙️ <b>机器人数据监控中心</b>\\n"
-        f"━━━━━━━━━━━━━━━━━━━\\n"
-        f"📅 <b>当前缓存日期</b>：<code>{date_str}</code>\\n"
-        f"📊 <b>今日录入进度</b>：{progress_text}\\n"
-        f"🎰 <b>最新开奖结果</b>：{latest_text}\\n"
-        f"📡 <b>系统轮询状态</b>：🟢 正常运行中 (每 5s/次)\\n"
-        f"📢 <b>广播发送渠道</b>：<code>{config.get('channel_id')}</code>\\n"
-        f"━━━━━━━━━━━━━━━━━━━"
+        f"⚙️ <b>机器人状态监控中心</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📅 <b>缓存开奖日期</b>：<code>{date_str}</code>\n"
+        f"📊 <b>今日数据进度</b>：{progress_text}\n"
+        f"🎰 <b>最新开奖结果</b>：{latest_text}\n"
+        f"📡 <b>轮询运行状态</b>：🟢 正常运行中 (每 5s/次)\n"
+        f"📢 <b>广播发送渠道</b>：<code>{config.get('channel_id')}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━"
     )
     return status_text
 
@@ -334,6 +343,7 @@ def extract_raw_records(res_json):
 
 # 5秒一次的后台开奖数据拉取线程
 def fetch_api_loop():
+    global force_refetch
     logger.info("📡 自动拉取开奖记录线程已成功启动...")
     last_processed_expect = None
     is_first_fetch = True
@@ -342,9 +352,24 @@ def fetch_api_loop():
         try:
             api_url = config.get("api_url", "https://history.macaumarksix.com/history/macaujc3")
             
-            # 在启动首次加载时，请求 500 条历史记录，确保无缝抓取今日所有的开奖历史记录 (全天共 480 期)
-            # 后续轮询每次只需拉取 30 条，轻量化节省流量
-            page_size = 500 if is_first_fetch else 30
+            # 判断管理员是否强制发起全量重拉，或者冷启动状态，或者当前无记录
+            latest_period = 0
+            if len(history_db["records"]) > 0:
+                latest_period = get_expect_period_num(history_db["records"][0]["expect"])
+            
+            if force_refetch:
+                logger.info("🔄 收到管理员强制全量拉取指令，执行 500 条全包拉取...")
+                is_first_fetch = True
+                force_refetch = False
+
+            # 自适应智能拉取机制:
+            # 1. 启动首次/数据库为空/历史数据期数少于最新理论期数，请求 500 条全量包，100% 修复数据完整性
+            # 2. 正常稳定对齐状态，每次拉取最近 100 条（包大小极轻量，同时完美对冲 5 小时内断网/关机后漏掉的期数，彻底防丢期）
+            if is_first_fetch or len(history_db["records"]) == 0 or len(history_db["records"]) < latest_period:
+                page_size = 500
+            else:
+                page_size = 100
+                
             payload = {
                 "pageSize": page_size,
                 "pageNum": 1
@@ -401,8 +426,12 @@ def fetch_api_loop():
                             history_db["date"] = latest_date
                             save_history()
                             last_processed_expect = None
+                            is_first_fetch = True # 跨天强制再次发起 500 全包拉取对齐今日首批开奖
                         
                         # 3. 筛选并追加属于当前日期的历史数据 (确保今日所有记录完整并且绝对剔除隔天记录)
+                        # 数据自洁：先剔除任何不等于当前缓存日期的脏数据，确保历史只有今日记录
+                        history_db["records"] = [r for r in history_db["records"] if extract_record_date(r) == history_db["date"]]
+                        
                         new_count = 0
                         existing_expects = {r["expect"] for r in history_db["records"]}
                         
@@ -455,11 +484,10 @@ def fetch_api_loop():
         except Exception as e:
             logger.error(f"📡 拉取轮询遇到错误: {e}")
             
-        time.sleep(5) # 5秒一次轮询
+        time.sleep(5)
 
 # === Telegram 机器人管理员交互命令 ===
 
-# 权限鉴权辅助函数
 def is_admin(user_id):
     admin_id = str(config.get("admin_id", ""))
     if not admin_id:
@@ -469,17 +497,28 @@ def is_admin(user_id):
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
-        "🤖 <b>澳门三分六合彩统计学预测机器人管理员</b>\\n\\n"
-        "程序已在 Termux 后台稳定启动，每5秒主动拉取最新开奖源。\\n"
-        "今日开奖数据将在 <b>每日0点</b> 自动触发清零重建，确保每日统计均值无滞后偏移。\\n\\n"
-        "📊 <b>实时状态命令：</b>\\n"
-        "➡️ /status - 查看当前数据累积进度与最新一期开奖情况\\n"
-        "➡️ /predict - [全员] 手动运算并获取下一期【大小、单双、波色】预测\\n"
-        "➡️ /broadcast - [管理员] 强制立即生成当前预测并群发到订阅频道\\n"
-        "➡️ /reset - [管理员] 立即手动清空清零今日的所有开奖历史\\n\\n"
-        "💡 <i>提示: 本程序专为 Termux 部署打造，无任何前端开销，极度省电。</i>"
+        "🤖 <b>澳门三分六合彩统计学预测机器人管理员</b>\n\n"
+        "程序已在 Termux 后台稳定启动，每5秒主动拉取最新开奖源。\n"
+        "今日开奖数据将在 <b>每日0点</b> 自动触发清零重建，确保每日统计均值无滞后偏移。\n\n"
+        "📊 <b>系统实时指令：</b>\n"
+        "➡️ /status - 查看当前数据累积进度与最新一期开奖情况\n"
+        "➡️ /predict - [全员] 手动运算并获取下一期预测\n"
+        "➡️ /pullall - [管理员] 立即强制在后台全量重拉 500 期今日历史，100% 对齐防漏\n"
+        "➡️ /broadcast - [管理员] 强制立即生成当前预测并群发到订阅频道\n"
+        "➡️ /reset - [管理员] 立即手动清空清零今日的所有开奖历史\n\n"
+        "💡 <i>提示: 本程序专为 Termux 部署打造，自适应自愈网络故障，极致省电省流。</i>"
     )
     bot.reply_to(message, welcome_text)
+
+@bot.message_handler(commands=['pullall'])
+def handle_pullall(message):
+    global force_refetch
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "❌ 权限拒绝：此命令仅限配置的管理员 ID 使用。")
+        return
+        
+    force_refetch = True
+    bot.reply_to(message, "🔄 <b>全量补齐指令已成功向后台发送！</b>\n系统将在下一次轮询中发起 500 条数据全量补齐拉取，100% 修复可能缺失的今日历史记录，请稍等数秒发送 /status 查看最新累计。")
 
 @bot.message_handler(commands=['status'])
 def handle_status(message):
@@ -540,14 +579,11 @@ def handle_reset(message):
 
 
 if __name__ == '__main__':
-    # 1. 载入本地持久化开奖缓存
     load_history()
     
-    # 2. 启动 5秒/次 API 异步拉取轮询守护线程
     t = threading.Thread(target=fetch_api_loop, daemon=True)
     t.start()
     
-    # 3. 启动 Telegram 机器人主线程 Polling
     print("==========================================")
     print("🤖 澳门三分六合彩自动预测机器人已启动！")
     print(f"📡 监听接口：{config.get('api_url')}")
