@@ -357,24 +357,105 @@ export function runStatisticalPrediction(history: MockDrawRecord[]): Statistical
   };
 }
 
-// Generate the beautiful Telegram channel HTML post
-export function generateTelegramPost(stats: StatisticalSummary, latestRecord: MockDrawRecord, subtitle = '每日黄金预测'): string {
-  const specNum = latestRecord.specialNumber.number;
-  const specColorEmoji = RED_WAVE.includes(specNum) ? '🔴' : BLUE_WAVE.includes(specNum) ? '🔵' : '🟢';
-  const specBigSmall = specNum === 49 ? '和' : specNum >= 25 ? '大' : '小';
-  const specOddEven = specNum % 2 !== 0 ? '单' : '双';
-
-  return `🔔 <b>澳门三分六合彩 - 开奖广播与下期预测</b> 🔔
-━━━━━━━━━━━━━━━━━━━
-📅 <b>当前开奖期号</b>：第 <b>${latestRecord.expect}</b> 期
-🎰 <b>开奖号码</b>：<code>${latestRecord.openCode}</code>
-🎯 <b>特码解析</b>：【 <b>${formatNum(specNum)}</b> 】号 (${specColorEmoji} | ${specBigSmall} | ${specOddEven})
-━━━━━━━━━━━━━━━━━━━
-
-🧠 <b>多因子交叉规律决策系统 · 智能推荐</b> (第 <b>${stats.nextExpect}</b> 期)：
- 🎯 <b>推荐大小</b>：【 <b>${stats.predictedBigSmall === '大' ? '🔥 大' : '❄️ 小'}</b> 】<i>(大小遗漏对冲 + 均值回归)</i>
- 🎯 <b>推荐单双</b>：【 <b>${stats.predictedOddEven === '单' ? '⚡ 单' : '🌙 双'}</b> 】<i>(奇偶转移概率 + 均衡修正)</i>
- 🎯 <b>推荐波色</b>：【 <b>${stats.predictedColor}</b> 】<i>(马尔可夫链 + 极限频率回补)</i>
-
-🍀 <i>统计规律基于多重混沌算法，仅供参考，请理性娱乐！</i> 🍀`;
+export interface VerificationResult {
+  expect: string;
+  specialNum: number;
+  pred_big_small: string;
+  pred_odd_even: string;
+  pred_color: string;
+  actual_big_small: string;
+  actual_odd_even: string;
+  actual_color: string;
+  bs_correct: boolean;
+  oe_correct: boolean;
+  color_correct: boolean;
 }
+
+export function verifyPredictionAtIndex(history: MockDrawRecord[], index: number): VerificationResult | null {
+  if (history.length < index + 51) return null;
+  
+  const subHistory = history.slice(index + 1);
+  const stats = runStatisticalPrediction(subHistory);
+  
+  const actualRecord = history[index];
+  const actualSpec = actualRecord.specialNumber.number;
+  const actualBigSmall = actualSpec === 49 ? '和' : actualSpec >= 25 ? '大' : '小';
+  const actualOddEven = actualSpec % 2 !== 0 ? '单' : '双';
+  const actualColor = RED_WAVE.includes(actualSpec) ? '红波' : BLUE_WAVE.includes(actualSpec) ? '蓝波' : '绿波';
+  
+  // Clean predicted prefixes
+  const predBigSmall = stats.predictedBigSmall.replace("🔥 ", "").replace("❄️ ", "");
+  const predOddEven = stats.predictedOddEven.replace("⚡ ", "").replace("🌙 ", "");
+  const predColor = stats.predictedColor.replace("🔴 ", "").replace("🔵 ", "").replace("🟢 ", "").replace("波", "") + "波";
+  
+  const bs_correct = (actualSpec === 49) ? false : (predBigSmall === actualBigSmall);
+  const oe_correct = (predOddEven === actualOddEven);
+  const color_correct = (predColor === actualColor);
+  
+  return {
+    expect: actualRecord.expect,
+    specialNum: actualSpec,
+    pred_big_small: predBigSmall,
+    pred_odd_even: predOddEven,
+    pred_color: predColor,
+    actual_big_small: actualBigSmall,
+    actual_odd_even: actualOddEven,
+    actual_color: actualColor,
+    bs_correct,
+    oe_correct,
+    color_correct
+  };
+}
+
+// Generate the beautiful Telegram channel HTML post matching the user's design exactly
+export function generateTelegramPost(stats: StatisticalSummary, history: MockDrawRecord[]): string {
+  if (history.length === 0) return "";
+  
+  const latestRecord = history[0];
+  const expect = latestRecord.expect;
+  
+  // Format balls: 1, 2, 3, 4, 5, 6,   7
+  const balls = latestRecord.openCode.split(',');
+  let balls_formatted = "";
+  if (balls.length >= 7) {
+    balls_formatted = balls.slice(0, 6).join('，') + '，   ' + balls[6];
+  } else {
+    balls_formatted = latestRecord.openCode;
+  }
+  
+  // Verify previous prediction (prediction at index 0)
+  const res = verifyPredictionAtIndex(history, 0);
+  
+  let pred_bs = "无";
+  let pred_oe = "无";
+  let pred_col = "无";
+  let bs_status = "无";
+  let oe_status = "无";
+  let col_status = "无";
+  
+  if (res) {
+    pred_bs = res.pred_big_small;
+    pred_oe = res.pred_odd_even;
+    pred_col = res.pred_color;
+    bs_status = res.bs_correct ? "对√" : "错×";
+    oe_status = res.oe_correct ? "对√" : "错×";
+    col_status = res.color_correct ? "对√" : "错×";
+  }
+  
+  const next_bs = stats.predictedBigSmall.replace("🔥 ", "").replace("❄️ ", "");
+  const next_oe = stats.predictedOddEven.replace("⚡ ", "").replace("🌙 ", "");
+  const next_col = stats.predictedColor.replace("🔴 ", "").replace("🔵 ", "").replace("🟢 ", "").replace("波", "") + "波";
+  
+  const predRow = `${pred_bs}     ${pred_oe}      ${pred_col}`;
+  const statusRow = `${bs_status}   ${oe_status}   ${col_status}`;
+  const nextRow = `${next_bs}     ${next_oe}      ${next_col}`;
+  
+  return `第${expect}期开奖结果
+${balls_formatted}
+上期预测结果
+${predRow}
+${statusRow}
+下期第${stats.nextExpect}期预测结果
+${nextRow}`;
+}
+

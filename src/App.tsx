@@ -139,7 +139,7 @@ export default function App() {
     setSendError('');
     setSendSuccessMsg('');
 
-    const formattedMsg = generateTelegramPost(stats, mockHistory[0]);
+    const formattedMsg = generateTelegramPost(stats, mockHistory);
 
     try {
       const response = await fetch('/api/telegram/test', {
@@ -536,7 +536,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       if (stats && mockHistory.length > 0) {
-                        handleCopyText(generateTelegramPost(stats, mockHistory[0]), 'post');
+                        handleCopyText(generateTelegramPost(stats, mockHistory), 'post');
                       }
                     }}
                     className="flex items-center gap-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-850 rounded text-[10px] text-slate-300 transition-all font-semibold"
@@ -546,27 +546,13 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="bg-[#101726] p-4 font-mono text-[11px] overflow-y-auto max-h-[350px] leading-relaxed border-b border-slate-800">
+                <div className="bg-[#101726] p-4 font-mono text-sm overflow-y-auto max-h-[350px] leading-relaxed border-b border-slate-800 flex justify-center">
                   {stats && mockHistory.length >= 50 ? (
-                    <div className="bg-[#17212F] rounded-xl border border-[#223348] p-4 text-slate-100 max-w-full shadow-md relative">
-                      <div className="whitespace-pre-wrap select-text">
-                        <div className="text-center font-bold text-xs text-yellow-400 mb-2">🔔 <b>澳门三分六合彩 - 开奖广播与下期预测</b> 🔔</div>
-                        <div className="text-slate-400 mb-1">📅 <b>当前开奖期号</b>：第 <b>{mockHistory[0].expect}</b> 期</div>
-                        <div className="text-slate-400 mb-1">🎰 <b>开奖号码</b>：<code>{mockHistory[0].openCode}</code></div>
-                        <div className="text-slate-400 mb-3">🎯 <b>特码解析</b>：【 <b>{formatNum(mockHistory[0].specialNumber.number)}</b> 】号 ({RED_WAVE.includes(mockHistory[0].specialNumber.number) ? '🔴' : BLUE_WAVE.includes(mockHistory[0].specialNumber.number) ? '🔵' : '🟢'} | {mockHistory[0].specialNumber.number === 49 ? '和' : mockHistory[0].specialNumber.number >= 25 ? '大' : '小'} | {mockHistory[0].specialNumber.number % 2 !== 0 ? '单' : '双'})</div>
-                        
-                        <div className="border-t border-slate-850 my-2.5"></div>
-                        <div className="text-slate-200 font-bold mb-1.5">🧠 <b>多因子交叉规律决策系统 · 智能推荐</b> (第 <b>{stats.nextExpect}</b> 期)：</div>
-                        <div className="text-[10px] ml-2 space-y-1">
-                          <div> 🎯 <b>推荐大小</b>：【 <strong className="text-amber-400">{stats.predictedBigSmall === '大' ? '🔥 大' : '❄️ 小'}</strong> 】<i>(大小遗漏对冲 + 均值回归)</i></div>
-                          <div> 🎯 <b>推荐单双</b>：【 <strong className="text-amber-400">{stats.predictedOddEven === '单' ? '⚡ 单' : '🌙 双'}</strong> 】<i>(奇偶转移概率 + 均衡修正)</i></div>
-                          <div> 🎯 <b>推荐波色</b>：【 <strong className="text-emerald-400">{stats.predictedColor}</strong> 】<i>(马尔可夫链 + 极限频率回补)</i></div>
-                        </div>
-
-                        <div className="border-t border-slate-850 my-2.5"></div>
-                        <div className="text-center font-bold text-emerald-400 mt-2">🍀 <i>统计规律基于多重混沌算法，仅供参考，请理性娱乐！</i> 🍀</div>
+                    <div className="bg-[#17212F] rounded-xl border border-[#223348] p-6 text-slate-100 w-full max-w-sm shadow-md relative">
+                      <div className="whitespace-pre-wrap select-text font-medium font-mono tracking-wider">
+                        {generateTelegramPost(stats, mockHistory)}
                       </div>
-                      <div className="text-[9px] text-slate-500 text-right mt-2 select-none">
+                      <div className="text-[9px] text-slate-500 text-right mt-4 select-none">
                         刚刚 • 👁️ 1.2k
                       </div>
                     </div>

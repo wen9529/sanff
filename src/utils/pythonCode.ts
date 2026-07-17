@@ -512,68 +512,58 @@ force_refetch = False
 
 # 格式化精美的开奖及预测广播
 def format_broadcast_message(latest_record, stats, next_expect):
-    spec = latest_record["special_num"]
-    open_code = latest_record["open_code"]
     expect = latest_record["expect"]
+    open_code = latest_record["open_code"]
     
-    # 解析号码球
+    # 解析号码球并格式化为 1, 2, 3, 4, 5, 6,   7 的样式
     balls = [b.strip() for b in open_code.split(",")]
     if len(balls) >= 7:
-        balls_formatted = "  ".join([f"<code>{b}</code>" for b in balls[:6]]) + f"  ➕  <code><b>{balls[6]}</b></code>"
+        balls_formatted = "，".join(balls[:6]) + "，   " + balls[6]
     else:
-        balls_formatted = f"<code>{open_code}</code>"
+        balls_formatted = open_code
         
-    # 获取今日已开期数进度
-    today_progress = get_today_progress(expect)
-    if today_progress:
-        progress_text = f"已开出 <b>{today_progress}</b> / 480 期"
+    # 获取上期预测校验
+    records = history_db["records"]
+    res = verify_prediction_at_index(records, 0)
+    
+    if res:
+        pred_bs = res["pred_big_small"].replace("🔥 ", "").replace("❄️ ", "")
+        pred_oe = res["pred_odd_even"].replace("⚡ ", "").replace("🌙 ", "")
+        pred_col = res["pred_color"].replace("🔴 ", "").replace("🔵 ", "").replace("🟢 ", "").replace("波", "") + "波"
+        
+        bs_status = "对√" if res["bs_correct"] else "错×"
+        oe_status = "对√" if res["oe_correct"] else "错×"
+        col_status = "对√" if res["color_correct"] else "错×"
     else:
-        progress_text = f"已装载 <b>{len(history_db['records'])}</b> 期"
+        pred_bs, pred_oe, pred_col = "无", "无", "无"
+        bs_status, oe_status, col_status = "无", "无", "无"
         
-    # 上期预测校验文本
-    last_verify_text = get_last_prediction_verify_text()
-        
+    next_bs = stats["pred_big_small"].replace("🔥 ", "").replace("❄️ ", "")
+    next_oe = stats["pred_odd_even"].replace("⚡ ", "").replace("🌙 ", "")
+    next_col = stats["pred_color"].replace("🔴 ", "").replace("🔵 ", "").replace("🟢 ", "").replace("波", "") + "波"
+    
+    pred_row = f"{pred_bs}     {pred_oe}      {pred_col}"
+    status_row = f"{bs_status}   {oe_status}   {col_status}"
+    next_row = f"{next_bs}     {next_oe}      {next_col}"
+
     msg = (
-        f"🎰 <b>澳门三分六合彩 · 实时开奖广播</b> 🎰\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"📅 <b>当前期号</b>：<code>第 {expect} 期</code>\\n"
-        f"⏱️ <b>今日进度</b>：{progress_text}\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"🔴 🔵 🟢 <b>最新中奖号码</b> 🟢 🔵 🔴\\n\\n"
-        f"👉  {balls_formatted}\\n\\n"
-        f"🔮 <b>特码解析</b>：【 <b>{spec:02d}</b> 】号 · {get_color(spec)} · {get_big_small(spec)} · {get_odd_even(spec)}\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"{last_verify_text}\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"🧠 <b>多因子交叉规律决策系统 · 智能推荐</b>\\n"
-        f"🎯 <b>下期预测期数</b>：<code>第 {next_expect} 期</code>\\n\\n"
-        f"👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】 <i>(大小遗漏对冲 + 均值回归)</i>\\n"
-        f"👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】 <i>(奇偶转移概率 + 均衡修正)</i>\\n"
-        f"👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】 <i>(马尔可夫链 + 极限频率回补)</i>\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"🍀 <i>统计规律基于多重混沌算法，仅供参考，请理性娱乐！</i>"
+        f"第 {expect} 期开奖结果\\n"
+        f"{balls_formatted}\\n\\n"
+        f"上期预测结果\\n"
+        f"{pred_row}\\n"
+        f"{status_row}\\n\\n"
+        f"下期第 {next_expect} 期预测结果\\n"
+        f"{next_row}"
     )
     return msg
 
 # 格式化精美的手动预测结果
 def format_predict_message(stats, next_expect):
-    last_verify_text = get_last_prediction_verify_text()
-    
-    msg = (
-        f"🔮 <b>澳门三分六合彩 · 智能推荐中心</b> 🔮\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"🎯 <b>预测目标期数</b>：<code>第 {next_expect} 期</code>\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"{last_verify_text}\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"🧠 <b>多因子规律决策系统 · 智能预测</b>\\n"
-        f" 👉 <b>推荐大小</b>：【 <b>{stats['pred_big_small']}</b> 】 <i>(综合均值与遗漏分析)</i>\\n"
-        f" 👉 <b>推荐单双</b>：【 <b>{stats['pred_odd_even']}</b> 】 <i>(马尔可夫状态转移)</i>\\n"
-        f" 👉 <b>推荐波色</b>：【 <b>{stats['pred_color']}</b> 】 <i>(多因子冷热加权回补)</i>\\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\\n"
-        f"🍀 <i>多因子规律计算仅供参考，请理性娱乐！</i>"
-    )
-    return msg
+    records = history_db["records"]
+    if len(records) > 0:
+        latest_record = records[0]
+        return format_broadcast_message(latest_record, stats, next_expect)
+    return "⚠️ 暂无今日开奖记录来做预测分析"
 
 # 格式化精美的状态监控消息
 def format_status_message(total, date_str, latest_record):
