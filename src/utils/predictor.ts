@@ -107,6 +107,202 @@ export interface StatisticalSummary {
   col_green_score: number;
 }
 
+export function getDynamicWeights(history: MockDrawRecord[]) {
+  // Base default weights
+  let bs_weights = { mr: 0.35, om: 0.35, tr: 0.30 };
+  let oe_weights = { mr: 0.35, om: 0.35, tr: 0.30 };
+  let col_weights = { mr: 0.35, om: 0.35, tr: 0.30 };
+
+  const backtestCount = Math.min(15, history.length - 52);
+  if (backtestCount <= 0) {
+    return { bs_weights, oe_weights, col_weights };
+  }
+
+  let bs_mr_hits = 0, bs_om_hits = 0, bs_tr_hits = 0;
+  let oe_mr_hits = 0, oe_om_hits = 0, oe_tr_hits = 0;
+  let col_mr_hits = 0, col_om_hits = 0, col_tr_hits = 0;
+
+  for (let k = 1; k <= backtestCount; k++) {
+    const subHistory = history.slice(k + 1);
+    const actualRecord = history[k];
+    const actualSpec = actualRecord.specialNumber.number;
+    if (actualSpec === 49) continue; // Skip ties for simplicity
+
+    const actualBS = actualSpec >= 25 ? '大' : '小';
+    const actualOE = actualSpec % 2 !== 0 ? '单' : '双';
+    const actualCol = RED_WAVE.includes(actualSpec) ? 'red' : BLUE_WAVE.includes(actualSpec) ? 'blue' : 'green';
+
+    const window = subHistory.slice(0, 50);
+    if (window.length < 50) continue;
+
+    // --- BIG/SMALL ---
+    let bCount = 0, sCount = 0;
+    window.forEach(r => {
+      const sp = r.specialNumber.number;
+      if (sp !== 49) {
+        if (sp >= 25) bCount++;
+        else sCount++;
+      }
+    });
+    const predBS_mr = sCount >= bCount ? '大' : '小';
+    if (predBS_mr === actualBS) bs_mr_hits++;
+
+    let bOm = 0, sOm = 0;
+    for (let j = 0; j < window.length; j++) {
+      const sp = window[j].specialNumber.number;
+      if (sp === 49) continue;
+      if (sp >= 25) break;
+      sOm++;
+    }
+    for (let j = 0; j < window.length; j++) {
+      const sp = window[j].specialNumber.number;
+      if (sp === 49) continue;
+      if (sp < 25) break;
+      bOm++;
+    }
+    const predBS_om = bOm >= sOm ? '大' : '小';
+    if (predBS_om === actualBS) bs_om_hits++;
+
+    let bToB = 0, bToS = 0, sToB = 0, sToS = 0;
+    for (let j = window.length - 2; j >= 0; j--) {
+      const pSpec = window[j + 1].specialNumber.number;
+      const cSpec = window[j].specialNumber.number;
+      if (pSpec !== 49 && cSpec !== 49) {
+        if (pSpec >= 25) {
+          if (cSpec >= 25) bToB++; else bToS++;
+        } else {
+          if (cSpec >= 25) sToB++; else sToS++;
+        }
+      }
+    }
+    const latestSp = window[0].specialNumber.number;
+    let predBS_tr = '大';
+    if (latestSp !== 49) {
+      if (latestSp >= 25) {
+        predBS_tr = bToB > bToS ? '大' : '小';
+      } else {
+        predBS_tr = sToB > sToS ? '大' : '小';
+      }
+    }
+    if (predBS_tr === actualBS) bs_tr_hits++;
+
+    // --- ODD/EVEN ---
+    let oCount = 0, eCount = 0;
+    window.forEach(r => {
+      if (r.specialNumber.number % 2 !== 0) oCount++; else eCount++;
+    });
+    const predOE_mr = eCount >= oCount ? '单' : '双';
+    if (predOE_mr === actualOE) oe_mr_hits++;
+
+    let oOm = 0, eOm = 0;
+    for (let j = 0; j < window.length; j++) {
+      if (window[j].specialNumber.number % 2 !== 0) break;
+      oOm++;
+    }
+    for (let j = 0; j < window.length; j++) {
+      if (window[j].specialNumber.number % 2 === 0) break;
+      eOm++;
+    }
+    const predOE_om = oOm >= eOm ? '单' : '双';
+    if (predOE_om === actualOE) oe_om_hits++;
+
+    let oToO = 0, oToE = 0, eToO = 0, eToE = 0;
+    for (let j = window.length - 2; j >= 0; j--) {
+      const pSpec = window[j + 1].specialNumber.number;
+      const cSpec = window[j].specialNumber.number;
+      if (pSpec % 2 !== 0) {
+        if (cSpec % 2 !== 0) oToO++; else oToE++;
+      } else {
+        if (cSpec % 2 !== 0) eToO++; else eToE++;
+      }
+    }
+    let predOE_tr = '单';
+    if (latestSp % 2 !== 0) {
+      predOE_tr = oToO > oToE ? '单' : '双';
+    } else {
+      predOE_tr = eToO > eToE ? '单' : '双';
+    }
+    if (predOE_tr === actualOE) oe_tr_hits++;
+
+    // --- COLOR ---
+    let rCount = 0, bBlueCount = 0, gCount = 0;
+    window.forEach(r => {
+      const sp = r.specialNumber.number;
+      if (RED_WAVE.includes(sp)) rCount++;
+      else if (BLUE_WAVE.includes(sp)) bBlueCount++;
+      else gCount++;
+    });
+    const minColor_mr = (rCount <= bBlueCount && rCount <= gCount) ? 'red' : (bBlueCount <= rCount && bBlueCount <= gCount) ? 'blue' : 'green';
+    if (minColor_mr === actualCol) col_mr_hits++;
+
+    let rOm = 0, bOmCol = 0, gOm = 0;
+    for (let j = 0; j < window.length; j++) {
+      if (RED_WAVE.includes(window[j].specialNumber.number)) break;
+      rOm++;
+    }
+    for (let j = 0; j < window.length; j++) {
+      if (BLUE_WAVE.includes(window[j].specialNumber.number)) break;
+      bOmCol++;
+    }
+    for (let j = 0; j < window.length; j++) {
+      if (GREEN_WAVE.includes(window[j].specialNumber.number)) break;
+      gOm++;
+    }
+    const maxColor_om = (rOm >= bOmCol && rOm >= gOm) ? 'red' : (bOmCol >= rOm && bOmCol >= gOm) ? 'blue' : 'green';
+    if (maxColor_om === actualCol) col_om_hits++;
+
+    let colRToR = 0, colRToB = 0, colRToG = 0;
+    let colBToR = 0, colBToB = 0, colBToG = 0;
+    let colGToR = 0, colGToB = 0, colGToG = 0;
+    for (let j = window.length - 2; j >= 0; j--) {
+      const pS = window[j + 1].specialNumber.number;
+      const cS = window[j].specialNumber.number;
+      const pC = RED_WAVE.includes(pS) ? 'red' : BLUE_WAVE.includes(pS) ? 'blue' : 'green';
+      const cC = RED_WAVE.includes(cS) ? 'red' : BLUE_WAVE.includes(cS) ? 'blue' : 'green';
+      if (pC === 'red') {
+        if (cC === 'red') colRToR++; else if (cC === 'blue') colRToB++; else colRToG++;
+      } else if (pC === 'blue') {
+        if (cC === 'red') colBToR++; else if (cC === 'blue') colBToB++; else colBToG++;
+      } else {
+        if (cC === 'red') colGToR++; else if (cC === 'blue') colGToB++; else colGToG++;
+      }
+    }
+    const latestCol = RED_WAVE.includes(latestSp) ? 'red' : BLUE_WAVE.includes(latestSp) ? 'blue' : 'green';
+    let maxColor_tr = 'red';
+    if (latestCol === 'red') {
+      maxColor_tr = (colRToR >= colRToB && colRToR >= colRToG) ? 'red' : (colRToB >= colRToR && colRToB >= colRToG) ? 'blue' : 'green';
+    } else if (latestCol === 'blue') {
+      maxColor_tr = (colBToR >= colBToB && colBToR >= colBToG) ? 'red' : (colBToB >= colBToR && colBToB >= colBToG) ? 'blue' : 'green';
+    } else {
+      maxColor_tr = (colGToR >= colGToB && colGToR >= colGToG) ? 'red' : (colGToB >= colGToR && colGToB >= colGToG) ? 'blue' : 'green';
+    }
+    if (maxColor_tr === actualCol) col_tr_hits++;
+  }
+
+  const bs_tot = bs_mr_hits + bs_om_hits + bs_tr_hits + 3;
+  bs_weights = {
+    mr: (bs_mr_hits + 1) / bs_tot,
+    om: (bs_om_hits + 1) / bs_tot,
+    tr: (bs_tr_hits + 1) / bs_tot
+  };
+
+  const oe_tot = oe_mr_hits + oe_om_hits + oe_tr_hits + 3;
+  oe_weights = {
+    mr: (oe_mr_hits + 1) / oe_tot,
+    om: (oe_om_hits + 1) / oe_tot,
+    tr: (oe_tr_hits + 1) / oe_tot
+  };
+
+  const col_tot = col_mr_hits + col_om_hits + col_tr_hits + 3;
+  col_weights = {
+    mr: (col_mr_hits + 1) / col_tot,
+    om: (col_om_hits + 1) / col_tot,
+    tr: (col_tr_hits + 1) / col_tot
+  };
+
+  return { bs_weights, oe_weights, col_weights };
+}
+
 export function runStatisticalPrediction(history: MockDrawRecord[]): StatisticalSummary {
   if (history.length < 50) {
     return {
@@ -262,6 +458,9 @@ export function runStatisticalPrediction(history: MockDrawRecord[]): Statistical
     }
   }
 
+  // Use dynamic weights from backtesting
+  const { bs_weights, oe_weights, col_weights } = getDynamicWeights(history);
+
   // 4. Combined Weight Decisions
   const bs_mr = (smallCount - bigCount) / 50.0;
   const bs_om = (bigOmission - smallOmission) * 0.1;
@@ -274,7 +473,7 @@ export function runStatisticalPrediction(history: MockDrawRecord[]): Statistical
       bs_tr = smallToBig > smallToSmall ? 0.5 : -0.5;
     }
   }
-  const bs_score = 0.35 * bs_mr + 0.35 * bs_om + 0.30 * bs_tr;
+  const bs_score = bs_weights.mr * bs_mr + bs_weights.om * bs_om + bs_weights.tr * bs_tr;
   const predictedBigSmall = bs_score >= 0 ? '大' : '小';
 
   // Odd/Even score
@@ -286,7 +485,7 @@ export function runStatisticalPrediction(history: MockDrawRecord[]): Statistical
   } else {
     oe_tr = evenToOdd > evenToEven ? 0.5 : -0.5;
   }
-  const oe_score = 0.35 * oe_mr + 0.35 * oe_om + 0.30 * oe_tr;
+  const oe_score = oe_weights.mr * oe_mr + oe_weights.om * oe_om + oe_weights.tr * oe_tr;
   const predictedOddEven = oe_score >= 0 ? '单' : '双';
 
   // Color scores
@@ -317,9 +516,9 @@ export function runStatisticalPrediction(history: MockDrawRecord[]): Statistical
     tr_green = greenToGreen / total_tr;
   }
 
-  const score_red = 0.35 * mr_red + 0.35 * om_red_score + 0.30 * tr_red;
-  const score_blue = 0.35 * mr_blue + 0.35 * om_blue_score + 0.30 * tr_blue;
-  const score_green = 0.35 * mr_green + 0.35 * om_green_score + 0.30 * tr_green;
+  const score_red = col_weights.mr * mr_red + col_weights.om * om_red_score + col_weights.tr * tr_red;
+  const score_blue = col_weights.mr * mr_blue + col_weights.om * om_blue_score + col_weights.tr * tr_blue;
+  const score_green = col_weights.mr * mr_green + col_weights.om * om_green_score + col_weights.tr * tr_green;
 
   const colorScores = [
     { name: '红波', score: score_red, emoji: '🔴' },
@@ -345,12 +544,12 @@ export function runStatisticalPrediction(history: MockDrawRecord[]): Statistical
     predictedColor,
     nextExpect,
     
-    bs_mr: Math.round(bs_mr * 100),
-    bs_om: Math.round(bs_om * 100),
-    bs_tr: Math.round(bs_tr * 100),
-    oe_mr: Math.round(oe_mr * 100),
-    oe_om: Math.round(oe_om * 100),
-    oe_tr: Math.round(oe_tr * 100),
+    bs_mr: Math.round(bs_weights.mr * bs_mr * 100),
+    bs_om: Math.round(bs_weights.om * bs_om * 100),
+    bs_tr: Math.round(bs_weights.tr * bs_tr * 100),
+    oe_mr: Math.round(oe_weights.mr * oe_mr * 100),
+    oe_om: Math.round(oe_weights.om * oe_om * 100),
+    oe_tr: Math.round(oe_weights.tr * oe_tr * 100),
     col_red_score: Math.round(score_red * 100),
     col_blue_score: Math.round(score_blue * 100),
     col_green_score: Math.round(score_green * 100)

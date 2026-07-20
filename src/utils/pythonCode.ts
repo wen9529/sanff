@@ -128,6 +128,202 @@ def clear_today_data():
     save_history()
     logger.info("=== 今日数据已成功清空清零，重新开始累积计数 ===")
 
+# 自适应元集成算法：回测过去15期中三个子模型（均值回归、遗漏、马尔可夫）的实际胜率，动态调整当前的权重
+def get_dynamic_weights_advanced(records, start_index=0):
+    bs_weights = {"mr": 0.35, "om": 0.35, "tr": 0.30}
+    oe_weights = {"mr": 0.35, "om": 0.35, "tr": 0.30}
+    col_weights = {"mr": 0.35, "om": 0.35, "tr": 0.30}
+
+    backtest_count = min(15, len(records) - (start_index + 52))
+    if backtest_count <= 0:
+        return bs_weights, oe_weights, col_weights
+
+    bs_mr_hits, bs_om_hits, bs_tr_hits = 0, 0, 0
+    oe_mr_hits, oe_om_hits, oe_tr_hits = 0, 0, 0
+    col_mr_hits, col_om_hits, col_tr_hits = 0, 0, 0
+
+    for k in range(1, backtest_count + 1):
+        idx = start_index + k
+        sub_records = records[idx + 1:]
+        actual_record = records[idx]
+        actual_spec = actual_record.get("special_num", 0)
+        if actual_spec == 49:
+            continue
+
+        actual_bs = "大" if actual_spec >= 25 else "小"
+        actual_oe = "单" if actual_spec % 2 != 0 else "双"
+        actual_col = "red" if actual_spec in RED_WAVE else "blue" if actual_spec in BLUE_WAVE else "green"
+
+        window = sub_records[:50]
+        if len(window) < 50:
+            continue
+
+        latest_sp = window[0].get("special_num", 0)
+
+        # --- BIG/SMALL ---
+        b_count, s_count = 0, 0
+        for r in window:
+            sp = r.get("special_num", 0)
+            if sp != 49:
+                if sp >= 25: b_count += 1
+                else: s_count += 1
+        pred_bs_mr = "大" if s_count >= b_count else "小"
+        if pred_bs_mr == actual_bs:
+            bs_mr_hits += 1
+
+        b_om, s_om = 0, 0
+        for r in window:
+            sp = r.get("special_num", 0)
+            if sp == 49: continue
+            if sp >= 25: break
+            s_om += 1
+        for r in window:
+            sp = r.get("special_num", 0)
+            if sp == 49: continue
+            if sp < 25: break
+            b_om += 1
+        pred_bs_om = "大" if b_om >= s_om else "小"
+        if pred_bs_om == actual_bs:
+            bs_om_hits += 1
+
+        b_to_b, b_to_s, s_to_b, s_to_s = 0, 0, 0, 0
+        for j in range(len(window) - 2, -1, -1):
+            p_spec = window[j + 1].get("special_num", 0)
+            c_spec = window[j].get("special_num", 0)
+            if p_spec != 49 and c_spec != 49:
+                if p_spec >= 25:
+                    if c_spec >= 25: b_to_b += 1
+                    else: b_to_s += 1
+                else:
+                    if c_spec >= 25: s_to_b += 1
+                    else: s_to_s += 1
+        pred_bs_tr = "大"
+        if latest_sp != 49:
+            if latest_sp >= 25:
+                pred_bs_tr = "大" if b_to_b > b_to_s else "小"
+            else:
+                pred_bs_tr = "大" if s_to_b > s_to_s else "小"
+        if pred_bs_tr == actual_bs:
+            bs_tr_hits += 1
+
+        # --- ODD/EVEN ---
+        o_count, e_count = 0, 0
+        for r in window:
+            sp = r.get("special_num", 0)
+            if sp % 2 != 0: o_count += 1
+            else: e_count += 1
+        pred_oe_mr = "单" if e_count >= o_count else "双"
+        if pred_oe_mr == actual_oe:
+            oe_mr_hits += 1
+
+        o_om, e_om = 0, 0
+        for r in window:
+            if r.get("special_num", 0) % 2 != 0: break
+            o_om += 1
+        for r in window:
+            if r.get("special_num", 0) % 2 == 0: break
+            e_om += 1
+        pred_oe_om = "单" if o_om >= e_om else "双"
+        if pred_oe_om == actual_oe:
+            oe_om_hits += 1
+
+        o_to_o, o_to_e, e_to_o, e_to_e = 0, 0, 0, 0
+        for j in range(len(window) - 2, -1, -1):
+            p_spec = window[j + 1].get("special_num", 0)
+            c_spec = window[j].get("special_num", 0)
+            if p_spec % 2 != 0:
+                if c_spec % 2 != 0: o_to_o += 1
+                else: o_to_e += 1
+            else:
+                if c_spec % 2 != 0: e_to_o += 1
+                else: e_to_e += 1
+        pred_oe_tr = "单"
+        if latest_sp % 2 != 0:
+            pred_oe_tr = "单" if o_to_o > o_to_e else "双"
+        else:
+            pred_oe_tr = "单" if e_to_o > e_to_e else "双"
+        if pred_oe_tr == actual_oe:
+            oe_tr_hits += 1
+
+        # --- COLOR ---
+        r_count, b_blue_count, g_count = 0, 0, 0
+        for r in window:
+            sp = r.get("special_num", 0)
+            if sp in RED_WAVE: r_count += 1
+            elif sp in BLUE_WAVE: b_blue_count += 1
+            else: g_count += 1
+        min_color_mr = "red" if (r_count <= b_blue_count and r_count <= g_count) else "blue" if (b_blue_count <= r_count and b_blue_count <= g_count) else "green"
+        if min_color_mr == actual_col:
+            col_mr_hits += 1
+
+        r_om, b_om_col, g_om = 0, 0, 0
+        for r in window:
+            if r.get("special_num", 0) in RED_WAVE: break
+            r_om += 1
+        for r in window:
+            if r.get("special_num", 0) in BLUE_WAVE: break
+            b_om_col += 1
+        for r in window:
+            if r.get("special_num", 0) in GREEN_WAVE: break
+            g_om += 1
+        max_color_om = "red" if (r_om >= b_om_col and r_om >= g_om) else "blue" if (b_om_col >= r_om and b_om_col >= g_om) else "green"
+        if max_color_om == actual_col:
+            col_om_hits += 1
+
+        col_r_to_r, col_r_to_b, col_r_to_g = 0, 0, 0
+        col_b_to_r, col_b_to_b, col_b_to_g = 0, 0, 0
+        col_g_to_r, col_g_to_b, col_g_to_g = 0, 0, 0
+        for j in range(len(window) - 2, -1, -1):
+            p_s = window[j + 1].get("special_num", 0)
+            c_s = window[j].get("special_num", 0)
+            p_c = "red" if p_s in RED_WAVE else "blue" if p_s in BLUE_WAVE else "green"
+            c_c = "red" if c_s in RED_WAVE else "blue" if c_s in BLUE_WAVE else "green"
+            if p_c == "red":
+                if c_c == "red": col_r_to_r += 1
+                elif c_c == "blue": col_r_to_b += 1
+                else: col_r_to_g += 1
+            elif p_c == "blue":
+                if c_c == "red": col_b_to_r += 1
+                elif c_c == "blue": col_b_to_b += 1
+                else: col_b_to_g += 1
+            else:
+                if c_c == "red": col_g_to_r += 1
+                elif c_c == "blue": col_g_to_b += 1
+                else: col_g_to_g += 1
+        latest_col = "red" if latest_sp in RED_WAVE else "blue" if latest_sp in BLUE_WAVE else "green"
+        max_color_tr = "red"
+        if latest_col == "red":
+            max_color_tr = "red" if (col_r_to_r >= col_r_to_b and col_r_to_r >= col_r_to_g) else "blue" if (col_r_to_b >= col_r_to_r and col_r_to_b >= col_r_to_g) else "green"
+        elif latest_col == "blue":
+            max_color_tr = "red" if (col_b_to_r >= col_b_to_b and col_b_to_r >= col_b_to_g) else "blue" if (col_b_to_b >= col_b_to_r and col_b_to_b >= col_b_to_g) else "green"
+        else:
+            max_color_tr = "red" if (col_g_to_r >= col_g_to_b and col_g_to_r >= col_g_to_g) else "blue" if (col_g_to_b >= col_g_to_r and col_g_to_b >= col_g_to_g) else "green"
+        if max_color_tr == actual_col:
+            col_tr_hits += 1
+
+    bs_tot = bs_mr_hits + bs_om_hits + bs_tr_hits + 3
+    bs_weights = {
+        "mr": (bs_mr_hits + 1) / bs_tot,
+        "om": (bs_om_hits + 1) / bs_tot,
+        "tr": (bs_tr_hits + 1) / bs_tot
+    }
+
+    oe_tot = oe_mr_hits + oe_om_hits + oe_tr_hits + 3
+    oe_weights = {
+        "mr": (oe_mr_hits + 1) / oe_tot,
+        "om": (oe_om_hits + 1) / oe_tot,
+        "tr": (oe_tr_hits + 1) / oe_tot
+    }
+
+    col_tot = col_mr_hits + col_om_hits + col_tr_hits + 3
+    col_weights = {
+        "mr": (col_mr_hits + 1) / col_tot,
+        "om": (col_om_hits + 1) / col_tot,
+        "tr": (col_tr_hits + 1) / col_tot
+    }
+
+    return bs_weights, oe_weights, col_weights
+
 # 基于 50 期开奖记录计算高精度的多因子预测模型 (大小、单双、波色)
 def analyze_and_predict_advanced(records, start_index=0):
     if len(records) < start_index + 50:
@@ -276,6 +472,8 @@ def analyze_and_predict_advanced(records, start_index=0):
             else: green_to_green += 1
 
     # 4. 融合各因子权重计算最终得分
+    bs_weights, oe_weights, col_weights = get_dynamic_weights_advanced(records, start_index)
+
     # ------------------ 大小得分计算 ------------------
     bs_mr = (small_count - big_count) / 50.0
     bs_om = (big_omission - small_omission) * 0.1
@@ -287,7 +485,7 @@ def analyze_and_predict_advanced(records, start_index=0):
         else:
             bs_tr = 0.5 if small_to_big > small_to_small else -0.5
             
-    bs_score = 0.35 * bs_mr + 0.35 * bs_om + 0.30 * bs_tr
+    bs_score = bs_weights["mr"] * bs_mr + bs_weights["om"] * bs_om + bs_weights["tr"] * bs_tr
     pred_big_small = "🔥 大" if bs_score >= 0 else "❄️ 小"
 
     # ------------------ 单双得分计算 ------------------
@@ -299,7 +497,7 @@ def analyze_and_predict_advanced(records, start_index=0):
     else:
         oe_tr = 0.5 if even_to_odd > even_to_even else -0.5
         
-    oe_score = 0.35 * oe_mr + 0.35 * oe_om + 0.30 * oe_tr
+    oe_score = oe_weights["mr"] * oe_mr + oe_weights["om"] * oe_om + oe_weights["tr"] * oe_tr
     pred_odd_even = "⚡ 单" if oe_score >= 0 else "🌙 双"
 
     # ------------------ 波色得分计算 ------------------
@@ -329,9 +527,9 @@ def analyze_and_predict_advanced(records, start_index=0):
         tr_blue = green_to_blue / total_tr
         tr_green = green_to_green / total_tr
         
-    score_red = 0.35 * mr_red + 0.35 * om_red_score + 0.30 * tr_red
-    score_blue = 0.35 * mr_blue + 0.35 * om_blue_score + 0.30 * tr_blue
-    score_green = 0.35 * mr_green + 0.35 * om_green_score + 0.30 * tr_green
+    score_red = col_weights["mr"] * mr_red + col_weights["om"] * om_red_score + col_weights["tr"] * tr_red
+    score_blue = col_weights["mr"] * mr_blue + col_weights["om"] * om_blue_score + col_weights["tr"] * tr_blue
+    score_green = col_weights["mr"] * mr_green + col_weights["om"] * om_green_score + col_weights["tr"] * tr_green
     
     color_scores = [
         {"color": "🔴 红波", "score": score_red},
