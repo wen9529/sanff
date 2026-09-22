@@ -1,0 +1,6 @@
+{
+    "bot_token": "填入你的_Telegram_Bot_Token",
+    "admin_id": "填入你的_Telegram用户数字ID",
+    "channel_id": "@填入你的频道公网用户名_或_群组ID",
+    "api_url": "https://history.macaumarksix.com/history/macaujc3"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "六合彩 Telegram 预测与 Termux 部署助手",
+  "description": "在 Termux 环境下使用 Python 部署六合彩预测 Telegram 机器人的全套方案。支持通过 web 控制面板进行配置测试、算法预览和一键生成 Python 代码。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
