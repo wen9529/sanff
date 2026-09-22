@@ -83,6 +83,18 @@ bot_token = config.get("bot_token")
 is_token_configured = bool(bot_token and bot_token not in ["YOUR_TELEGRAM_BOT_TOKEN", "填入你的_Telegram_Bot_Token"])
 active_token = bot_token if is_token_configured else "123456789:AAFakeTokenForModuleImport"
 
+# 🌐 网络代理与反代配置（解决大陆 Termux 环境直连 Telegram API 被阻断无反应问题）
+proxy_setting = config.get("proxy") or os.environ.get("https_proxy") or os.environ.get("http_proxy")
+if proxy_setting:
+    logger.info(f"🌐 检测到代理配置，启用网络代理: {proxy_setting}")
+    telebot.apihelper.proxy = {'https': proxy_setting, 'http': proxy_setting}
+
+telegram_api_endpoint = config.get("telegram_api_endpoint")
+if telegram_api_endpoint:
+    endpoint_clean = telegram_api_endpoint.rstrip("/")
+    telebot.apihelper.API_URL = f"{endpoint_clean}/bot{{0}}/{{1}}"
+    logger.info(f"🌐 启用自定义 Telegram 反向代理接口: {endpoint_clean}")
+
 # 初始化 Bot
 bot = telebot.TeleBot(active_token, parse_mode='HTML')
 
@@ -1217,17 +1229,17 @@ def get_main_keyboard():
     )
     return markup
 
-@bot.message_handler(commands=['start', 'help'])
+@bot.message_handler(commands=['start', 'help', 'menu'])
 def send_welcome(message):
     welcome_text = (
         "🤖 <b>澳门三分六合彩统计学预测机器人管理员</b>\n\n"
         "程序已在 Termux 后台稳定启动，每5秒主动拉取最新开奖源。\n"
         "今日开奖数据将在 <b>每日0点</b> 自动触发清零重建，确保每日统计均值无滞后偏移。\n\n"
-        "📊 <b>系统实时指令：</b>\n"
-        "➡️ /status - 查看当前数据累积进度与最新一期开奖情况\n"
-        "➡️ /predict - [全员] 手动运算并获取下一期预测\n"
-        "➡️ /stats - [全员] <b>查看今日全量盈亏统计数据报告 (注数收益、准确率与连中榜)</b>\n"
-        "➡️ /history - [全员] 查看最近 10 期预测结果及模型胜率榜\n"
+        "📊 <b>系统快捷交互指令：</b>\n"
+        "➡️ /status (或发'状态') - 查看当前数据累积进度与最新一期开奖情况\n"
+        "➡️ /predict (或发'预测') - 手动运算并获取下一期预测\n"
+        "➡️ /stats (或发'盈亏') - <b>查看今日全量盈亏统计数据报告 (注数收益、准确率与连中榜)</b>\n"
+        "➡️ /history (或发'历史') - 查看最近 10 期预测结果及模型胜率榜\n"
         "➡️ /pullall - [管理员] 立即强制在后台全量重拉 500 期今日历史，100% 对齐防漏\n"
         "➡️ /broadcast - [管理员] 强制立即生成当前预测并群发到订阅频道\n"
         "➡️ /reset - [管理员] 立即手动清空清零今日的所有开奖历史\n\n"
@@ -1235,12 +1247,12 @@ def send_welcome(message):
     )
     bot.reply_to(message, welcome_text, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
-@bot.message_handler(commands=['stats', 'profit', 'yingkui'])
+@bot.message_handler(commands=['stats', 'profit', 'yingkui', 'yk', 'zj'])
 def handle_stats(message):
     resp = format_stats_message()
     bot.reply_to(message, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
-@bot.message_handler(commands=['history'])
+@bot.message_handler(commands=['history', 'ls', 'jl'])
 def handle_history(message):
     resp = get_prediction_history_text(limit=10)
     bot.reply_to(message, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
@@ -1286,7 +1298,7 @@ def handle_pullall(message):
     force_refetch = True
     bot.reply_to(message, "🔄 <b>全量补齐指令已成功向后台发送！</b>\n系统将在下一次轮询中发起 500 条数据全量补齐拉取，100% 修复可能缺失的今日历史记录，请稍等数秒发送 /status 查看最新累计。")
 
-@bot.message_handler(commands=['status'])
+@bot.message_handler(commands=['status', 'zt', 'jk'])
 def handle_status(message):
     total = len(history_db["records"])
     date_str = history_db["date"]
@@ -1295,7 +1307,7 @@ def handle_status(message):
     status_text = format_status_message(total, date_str, latest_record)
     bot.reply_to(message, status_text, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
-@bot.message_handler(commands=['predict'])
+@bot.message_handler(commands=['predict', 'yc', 'forecast', 'next'])
 def handle_predict(message):
     total = len(history_db["records"])
     if total < 50:
@@ -1343,10 +1355,33 @@ def handle_reset(message):
     clear_today_data()
     bot.reply_to(message, "✅ <b>手动清零成功！</b>今日的缓存历史开奖数据已被彻底清除，正在开始全新累加记数。")
 
-@bot.message_handler(func=lambda msg: msg.text and any(k in msg.text for k in ['盈亏', '战绩', '收益', '统计']))
+# === 自然语言意图识别处理器（告别“发送文本无反应”问题） ===
+
+# 1. 盈亏、胜率、统计相关文本
+@bot.message_handler(func=lambda msg: msg.text and any(k in msg.text for k in ['盈亏', '战绩', '收益', '统计', '胜率', '对错榜']))
 def handle_stats_text(message):
     resp = format_stats_message()
     bot.reply_to(message, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
+
+# 2. 预测、下期、号码相关文本
+@bot.message_handler(func=lambda msg: msg.text and any(k in msg.text for k in ['预测', '下期', '特码', '买什么', '推测', '开什么', '号码', '波色', '大小', '单双', '分析']))
+def handle_predict_text(message):
+    handle_predict(message)
+
+# 3. 历史、复盘、对错记录相关文本
+@bot.message_handler(func=lambda msg: msg.text and any(k in msg.text for k in ['历史', '复盘', '往期', '战况', '记录', '走势']))
+def handle_history_text(message):
+    handle_history(message)
+
+# 4. 状态、进度、监控相关文本
+@bot.message_handler(func=lambda msg: msg.text and any(k in msg.text for k in ['状态', '运行', '监控', '进度', '开奖', '开奖结果', '最新开奖', '开几期']))
+def handle_status_text_query(message):
+    handle_status(message)
+
+# 5. 兜底响应（私聊或被@提及的任何消息，均友好提示菜单，绝不静默无反应）
+@bot.message_handler(func=lambda msg: True, content_types=['text'])
+def handle_default_fallback(message):
+    send_welcome(message)
 
 
 if __name__ == '__main__':
@@ -1355,16 +1390,48 @@ if __name__ == '__main__':
         print("您可以使用 Termux 中的命令修改: nano config.json")
         sys.exit(1)
         
+    print("==========================================")
+    print("🤖 澳门三分六合彩自动预测机器人正在启动...")
+    print(f"📡 监听接口：{config.get('api_url')}")
+    print(f"👥 管理员 ID：{config.get('admin_id') or '未配置(所有人均可管理员操作)'}")
+    print(f"📢 广播目标：{config.get('channel_id')}")
+    if proxy_setting:
+        print(f"🌐 代理通道：{proxy_setting}")
+    if telegram_api_endpoint:
+        print(f"🌐 反代端点：{telegram_api_endpoint}")
+    print("==========================================")
+    
+    # 1. 连通性预检与身份确认
+    try:
+        me = bot.get_me()
+        print(f"✅ Telegram 连通测试成功！Bot 用户名: @{me.username} (ID: {me.id})")
+        if getattr(me, 'can_read_all_group_messages', None) is False:
+            print("⚠️ [群组隐私提示] 机器人的群组隐私模式(Privacy Mode)为开启状态。")
+            print("   说明：若在 Telegram 群组中直接发'预测'等普通文字，Bot 将收不到。")
+            print("   解决：请在 @BotFather 处发送 /setprivacy 设为 Disable，或将机器人设为群管理员。")
+    except Exception as e:
+        logger.error(f"❌ Telegram API 连通性测试异常: {e}")
+        print("\n--------------------------------------------------------------")
+        print("❌ 警告: 无法与 Telegram 官方接口建立连接！导致'bot无反应'的常见原因：")
+        print(" 1. Token 填写有误或带有多余空格；")
+        print(" 2. 若在大陆未翻墙网络环境，Telegram 官方 API 会被 GFW 阻断。")
+        print("    解决方案：在 config.json 中增加 \"proxy\": \"http://127.0.0.1:7890\"")
+        print("    或者在 Termux 运行: export https_proxy=http://127.0.0.1:7890")
+        print(" 3. 或使用 Cloudflare 反代并在 config.json 配置 \"telegram_api_endpoint\"。")
+        print("--------------------------------------------------------------\n")
+        
+    # 2. 清除历史残留 Webhook (彻底防止 409 Conflict 导致长轮询静默失败)
+    try:
+        bot.delete_webhook(drop_pending_updates=True)
+        logger.info("✅ 已清理历史残留 Webhook 与积压更新，长轮询接收就绪。")
+    except Exception as e:
+        logger.warning(f"清理 Webhook 状态提示: {e}")
+
     load_history()
     
     t = threading.Thread(target=fetch_api_loop, daemon=True)
     t.start()
     
-    print("==========================================")
-    print("🤖 澳门三分六合彩自动预测机器人已启动！")
-    print(f"📡 监听接口：{config.get('api_url')}")
-    print(f"👥 管理员 ID：{config.get('admin_id') or '未配置(所有人均可管理员操作)'}")
-    print(f"📢 广播目标：{config.get('channel_id')}")
     print("🚀 正在 Termux 下建立长轮询连接，随时可以关闭 SSH 终端挂机运行。")
     print("==========================================")
     

@@ -60,6 +60,85 @@ async function startServer() {
     }
   });
 
+  // API Route: Diagnose Telegram Bot status, Webhook conflicts, and group privacy
+  app.post('/api/telegram/check_bot', async (req: Request, res: Response) => {
+    const { botToken } = req.body;
+    if (!botToken) {
+      res.status(400).json({ success: false, error: '缺少 botToken 参数' });
+      return;
+    }
+
+    try {
+      // 1. Get Me (identity & permissions)
+      const meUrl = `https://api.telegram.org/bot${botToken}/getMe`;
+      const meResp = await fetch(meUrl);
+      const meData = await meResp.json();
+
+      if (!meResp.ok || !meData.ok) {
+        res.status(400).json({
+          success: false,
+          error: meData.description || 'Token 无效或无法连接 Telegram 服务器',
+          details: meData
+        });
+        return;
+      }
+
+      // 2. Get Webhook info
+      const hookUrl = `https://api.telegram.org/bot${botToken}/getWebhookInfo`;
+      const hookResp = await fetch(hookUrl);
+      const hookData = await hookResp.json();
+
+      const botInfo = meData.result;
+      const hookInfo = hookData.result || {};
+
+      res.json({
+        success: true,
+        botInfo: {
+          id: botInfo.id,
+          username: botInfo.username,
+          first_name: botInfo.first_name,
+          can_join_groups: botInfo.can_join_groups,
+          can_read_all_group_messages: botInfo.can_read_all_group_messages ?? false,
+          supports_inline_queries: botInfo.supports_inline_queries
+        },
+        webhookInfo: {
+          url: hookInfo.url || '',
+          has_custom_certificate: hookInfo.has_custom_certificate || false,
+          pending_update_count: hookInfo.pending_update_count || 0,
+          last_error_message: hookInfo.last_error_message || ''
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        error: `体检诊断请求失败: ${err.message}`
+      });
+    }
+  });
+
+  // API Route: Delete Webhook to fix 409 conflict
+  app.post('/api/telegram/delete_webhook', async (req: Request, res: Response) => {
+    const { botToken } = req.body;
+    if (!botToken) {
+      res.status(400).json({ success: false, error: '缺少 botToken 参数' });
+      return;
+    }
+
+    try {
+      const delUrl = `https://api.telegram.org/bot${botToken}/deleteWebhook?drop_pending_updates=true`;
+      const delResp = await fetch(delUrl);
+      const delData = await delResp.json();
+
+      if (delResp.ok && delData.ok) {
+        res.json({ success: true, message: '已成功清除 Webhook 并重置积压更新！' });
+      } else {
+        res.status(400).json({ success: false, error: delData.description || '清除 Webhook 失败' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: `操作失败: ${err.message}` });
+    }
+  });
+
   // API Route: Proxy request to real Macau Mark Six history API
   app.post('/api/lottery/history', async (req: Request, res: Response) => {
     const { pageSize = 50, pageNum = 1, apiUrl = 'https://history.macaumarksix.com/history/macaujc3' } = req.body;

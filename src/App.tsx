@@ -30,7 +30,11 @@ import {
   TrendingDown,
   Layers,
   Activity,
-  Globe
+  Globe,
+  Stethoscope,
+  Radio,
+  WifiOff,
+  CheckCircle2
 } from 'lucide-react';
 import {
   generateMockHistory,
@@ -73,6 +77,28 @@ export default function App() {
   const [sendStatus, setSendStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [sendError, setSendError] = useState('');
   const [sendSuccessMsg, setSendSuccessMsg] = useState('');
+
+  // Bot Diagnosis State (解决“bot无反应”排查)
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [diagResult, setDiagResult] = useState<{
+    botInfo: {
+      id: number;
+      username: string;
+      first_name: string;
+      can_join_groups: boolean;
+      can_read_all_group_messages: boolean;
+      supports_inline_queries: boolean;
+    };
+    webhookInfo: {
+      url: string;
+      has_custom_certificate: boolean;
+      pending_update_count: number;
+      last_error_message: string;
+    };
+  } | null>(null);
+  const [diagError, setDiagError] = useState('');
+  const [isDeletingWebhook, setIsDeletingWebhook] = useState(false);
+  const [deleteWebhookSuccess, setDeleteWebhookSuccess] = useState('');
   
   // Copied indices for UX feedback
   const [copiedStatus, setCopiedStatus] = useState<{ [key: string]: boolean }>({});
@@ -289,6 +315,64 @@ export default function App() {
     } catch (err: any) {
       setSendStatus('error');
       setSendError(`请求失败: ${err.message}`);
+    }
+  };
+
+  // Bot Diagnosis Handler (解决无反应一键体检)
+  const handleDiagnoseBot = async () => {
+    if (!botToken.trim()) {
+      setDiagError('请先填写您的 Telegram Bot Token！');
+      return;
+    }
+    setIsDiagnosing(true);
+    setDiagError('');
+    setDeleteWebhookSuccess('');
+    try {
+      const res = await fetch('/api/telegram/check_bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: botToken.trim() })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setDiagResult(data);
+      } else {
+        setDiagError(data.error || '诊断失败，请检查 Token 格式或网络');
+      }
+    } catch (e: any) {
+      setDiagError(`诊断请求失败: ${e.message}`);
+    } finally {
+      setIsDiagnosing(false);
+    }
+  };
+
+  // Delete Webhook Handler (解决 409 Conflict 冲突)
+  const handleDeleteWebhook = async () => {
+    if (!botToken.trim()) return;
+    setIsDeletingWebhook(true);
+    setDeleteWebhookSuccess('');
+    try {
+      const res = await fetch('/api/telegram/delete_webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: botToken.trim() })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setDeleteWebhookSuccess('✅ 成功清除残留 Webhook 并重置积压更新！长轮询现已恢复顺畅。');
+        if (diagResult) {
+          setDiagResult({
+            ...diagResult,
+            webhookInfo: { ...diagResult.webhookInfo, url: '', pending_update_count: 0 }
+          });
+        }
+      } else {
+        setDiagError(data.error || '清除 Webhook 失败');
+      }
+    } catch (e: any) {
+      setDiagError(`清除 Webhook 失败: ${e.message}`);
+    } finally {
+      setIsDeletingWebhook(false);
     }
   };
 
@@ -914,14 +998,152 @@ export default function App() {
                     </div>
                   )}
 
-                  <button
-                    onClick={handleSendTestMessage}
-                    disabled={sendStatus === 'loading'}
-                    className="w-full mt-2 bg-sky-500 hover:bg-sky-600 disabled:bg-sky-500/40 text-slate-950 font-black py-2.5 px-4 rounded-lg text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-sky-500/10 active:scale-98"
-                  >
-                    <Send className="w-3.5 h-3.5 fill-current" />
-                    🚀 向 Telegram 客户端发送当前统计预测测试
-                  </button>
+                  {/* Diagnosis Result Card */}
+                  {diagError && (
+                    <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg text-xs">
+                      <p className="font-bold flex items-center gap-1.5 mb-1">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                        体检诊断未通过：
+                      </p>
+                      <p className="text-[11px] leading-relaxed opacity-90">{diagError}</p>
+                    </div>
+                  )}
+
+                  {deleteWebhookSuccess && (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-xs">
+                      <p className="text-[11px] leading-relaxed font-semibold">{deleteWebhookSuccess}</p>
+                    </div>
+                  )}
+
+                  {diagResult && (
+                    <div className="p-3.5 bg-slate-950/80 rounded-xl border border-slate-800 space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                        <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                          Bot 体检报告 (@{diagResult.botInfo.username})
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">ID: {diagResult.botInfo.id}</span>
+                      </div>
+
+                      {/* Group Privacy check */}
+                      <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-slate-400 font-semibold text-[11px]">群组隐私模式 (Privacy Mode):</span>
+                          {diagResult.botInfo.can_read_all_group_messages ? (
+                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold rounded border border-emerald-500/20">
+                              已关闭 (正常接收所有消息)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 text-[10px] font-bold rounded border border-amber-500/20">
+                              开启中 (易导致群聊发字无反应)
+                            </span>
+                          )}
+                        </div>
+                        {!diagResult.botInfo.can_read_all_group_messages && (
+                          <p className="text-[10.5px] text-amber-300/90 leading-relaxed mt-1">
+                            ⚠️ <strong>特别注意：</strong>隐私模式开启时，群成员发“预测”等普通文字，Telegram <strong>不会</strong>传给 Bot！
+                            <br />
+                            👉 解决：在 @BotFather 发送 <code>/setprivacy</code> 设为 <code>Disable</code>，或把 Bot 设为<strong>群管理员</strong>。
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Webhook check */}
+                      <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-slate-400 font-semibold text-[11px]">Webhook 冲突检测:</span>
+                          {diagResult.webhookInfo.url ? (
+                            <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 text-[10px] font-bold rounded border border-rose-500/20">
+                              检测到残留冲突
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold rounded border border-emerald-500/20">
+                              正常 (长轮询接收就绪)
+                            </span>
+                          )}
+                        </div>
+                        {diagResult.webhookInfo.url ? (
+                          <div className="mt-1 space-y-1.5">
+                            <p className="text-[10.5px] text-rose-300 leading-relaxed font-mono break-all">
+                              URL: {diagResult.webhookInfo.url}
+                            </p>
+                            <p className="text-[10.5px] text-slate-400">
+                              残留 Webhook 会触发 409 Conflict，导致 Termux 机器人完全收不到消息！
+                            </p>
+                            <button
+                              onClick={handleDeleteWebhook}
+                              disabled={isDeletingWebhook}
+                              className="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded text-[11px] font-bold transition-all border border-rose-500/30"
+                            >
+                              {isDeletingWebhook ? '正在清除...' : '🧹 一键清除残留 Webhook'}
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-[10.5px] text-slate-400">无任何第三方 Webhook 拦截，Termux 的长轮询通道处于畅通状态。</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons: Diagnose & Send Test */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                    <button
+                      onClick={handleDiagnoseBot}
+                      disabled={isDiagnosing}
+                      className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/40 text-white font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-indigo-600/10 active:scale-98"
+                    >
+                      {isDiagnosing ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Stethoscope className="w-3.5 h-3.5" />
+                      )}
+                      <span>🩺 一键诊断 Bot 无反应原因</span>
+                    </button>
+
+                    <button
+                      onClick={handleSendTestMessage}
+                      disabled={sendStatus === 'loading'}
+                      className="bg-sky-500 hover:bg-sky-400 disabled:bg-sky-500/40 text-slate-950 font-black py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-sky-500/10 active:scale-98"
+                    >
+                      <Send className="w-3.5 h-3.5 fill-current" />
+                      <span>🚀 发送当前实盘预测测试</span>
+                    </button>
+                  </div>
+
+                  {/* Troubleshooting Guide Box */}
+                  <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 mt-3 space-y-2 text-slate-300 text-[11px]">
+                    <div className="flex items-center gap-1.5 text-amber-400 font-bold">
+                      <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Bot 发消息无反应？五大高频排查清单：</span>
+                    </div>
+                    <ul className="space-y-1.5 list-disc list-inside text-[10.5px] text-slate-400 leading-relaxed">
+                      <li>
+                        <strong className="text-slate-200">1. 大陆网络 GFW 拦截：</strong>
+                        Termux 内手机未走代理，连接 <code>api.telegram.org</code> 超时。
+                        <br />
+                        <span className="text-sky-400 font-mono">解决：在 config.json 填入 "proxy": "http://127.0.0.1:7890"</span>
+                      </li>
+                      <li>
+                        <strong className="text-slate-200">2. 群组隐私保护拦截：</strong>
+                        在群里直接打中文“预测”，Telegram 不会发给 Bot。
+                        <br />
+                        <span className="text-amber-300">解决：私聊 @BotFather 输入 /setprivacy 改为 Disable，或将 Bot 设为群管理员。</span>
+                      </li>
+                      <li>
+                        <strong className="text-slate-200">3. 手机熄屏后台断网：</strong>
+                        Android 省电策略杀死进程。
+                        <br />
+                        <span className="text-emerald-400 font-mono">解决：在 Termux 执行 termux-wake-lock</span>
+                      </li>
+                      <li>
+                        <strong className="text-slate-200">4. 409 Conflict 冲突：</strong>
+                        旧 Webhook 残留或同时开了两个 bot.py。
+                        <br />
+                        <span className="text-purple-300">解决：点击上方“一键诊断”清理 Webhook；用新版 start.sh 自动杀旧进程。</span>
+                      </li>
+                    </ul>
+                  </div>
+
                   <p className="text-[10px] text-slate-500 text-center leading-normal">
                     * 我们已建立中转网关以兼容内网及外网，您可以放心在网页端测试。
                   </p>
@@ -1319,10 +1541,68 @@ export default function App() {
                   只要配置了正确的 <code>admin_id</code>，您就可以直接在 Telegram 与机器人的私聊对话中进行如下高阶操作：
                 </p>
                 <div className="space-y-2 text-[11px] text-slate-300">
-                  <div>• <code>/status</code> - 查询机器人今日已累积开奖期数。开满 50 期即会自动触发全天实时预测逻辑。</div>
-                  <div>• <code>/predict</code> - 全员公开命令，机器人回复当前统计学模型预测的下一期大小、单双与波色。</div>
+                  <div>• <code>/status</code> (或直接发文字“状态”) - 查询机器人今日已累积开奖期数。开满 50 期即会自动触发全天实时预测逻辑。</div>
+                  <div>• <code>/predict</code> (或直接发文字“预测”) - 全员公开命令，机器人回复当前统计学模型预测的下一期大小、单双与波色。</div>
+                  <div>• <code>/stats</code> (或直接发文字“盈亏”) - <b>查看今日全量盈亏统计数据报告 (注数收益、准确率与连中榜)</b>。</div>
+                  <div>• <code>/history</code> (或直接发文字“历史”) - 查看最近 10 期预测结果及模型胜率榜。</div>
                   <div>• <code>/broadcast</code> - [管理员专属] 立即手动对最新的开奖数据进行模型推演，生成华丽排版后群发到频道中。</div>
+                  <div>• <code>/pullall</code> - [管理员专属] 立即强制在后台全量重拉 500 期今日历史，100% 对齐防漏。</div>
                   <div>• <code>/reset</code> - [管理员专属] 紧急强制清空缓存记录，在开奖源异常或需要手动复位时使用。</div>
+                </div>
+              </div>
+
+              {/* Step 6: Troubleshooting Bot No Reaction */}
+              <div className="p-4 bg-slate-950/40 rounded-xl border border-rose-900/40 space-y-3">
+                <span className="inline-block bg-rose-500 text-white font-black px-2 py-0.5 rounded text-[10px]">
+                  步骤 6
+                </span>
+                <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-rose-400" />
+                  🚨 常见故障：Bot 无反应 / 发消息不回排查指南
+                </h4>
+
+                <div className="space-y-3 text-[11px] text-slate-300">
+                  <div className="p-3 bg-slate-900/70 rounded-lg border border-slate-800">
+                    <p className="font-bold text-amber-400 mb-1">Q1：在群组里发消息（如发“预测”），Bot 没有任何回应？</p>
+                    <p className="text-slate-400 leading-relaxed mb-1.5">
+                      <strong>根本原因：</strong>Telegram 官方默认对所有机器人开启了 <strong>Group Privacy Mode（群组隐私保护）</strong>。此时，Bot 只能看到以 <code>/</code> 开头的指令或 <code>@机器人</code> 的消息，普通群成员打字 Bot 根本收不到！
+                    </p>
+                    <p className="text-emerald-400 font-semibold mb-1">三种解决方法（任选其一）：</p>
+                    <ul className="list-disc list-inside space-y-1 text-slate-300 pl-1 text-[10.5px]">
+                      <li>方法 A（最推荐）：在 Telegram 私聊 <strong>@BotFather</strong>，发送 <code>/setprivacy</code> ➡️ 选择你的 Bot ➡️ 点击 <strong>Disable</strong>（彻底关闭隐私保护，群内所有文字均可直接识别）。</li>
+                      <li>方法 B：把机器人设置为该群的<strong>管理员 (Admin)</strong>，管理员拥有查看全部消息的权限。</li>
+                      <li>方法 C：在群里使用带斜杠的指令，例如 <code>/predict</code> 或 <code>/stats</code>，或私聊与机器人互动。</li>
+                    </ul>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/70 rounded-lg border border-slate-800">
+                    <p className="font-bold text-amber-400 mb-1">Q2：在手机 Termux 运行 <code>bash start.sh</code> 后，一直连不上 Telegram？</p>
+                    <p className="text-slate-400 leading-relaxed mb-1.5">
+                      <strong>根本原因：</strong>如果在国内未配置 VPN / 代理网络，大陆网络会阻断 Telegram 官方服务器 <code>api.telegram.org</code>。
+                    </p>
+                    <p className="text-emerald-400 font-semibold mb-1">解决方案：</p>
+                    <p className="text-slate-300 text-[10.5px] leading-relaxed">
+                      在新版 <code>config.json</code> 中已内置代理配置项，例如填入：<br />
+                      <code className="bg-slate-950 text-sky-400 px-1 py-0.5 rounded font-mono">"proxy": "http://127.0.0.1:7890"</code> (端口根据你手机 VPN 代理的局域网端口设置)<br />
+                      或者在 Termux 终端运行：<code className="bg-slate-950 text-sky-400 px-1 py-0.5 rounded font-mono">export https_proxy=http://127.0.0.1:7890</code> 后再运行脚本。
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/70 rounded-lg border border-slate-800">
+                    <p className="font-bold text-amber-400 mb-1">Q3：日志提示 409 Conflict: terminated by other getUpdates request？</p>
+                    <p className="text-slate-400 leading-relaxed">
+                      <strong>根本原因：</strong>同一个 Bot Token 曾经设置过 Webhook，或者后台有多个进程同时在轮询。<br />
+                      <strong>解决方案：</strong>在网页端“控制台”点击<strong>【🩺 一键诊断 Bot 无反应原因】</strong>，系统会自动检测并提供<strong>【一键清除 Webhook】</strong>功能；新版 <code>start.sh</code> 也会在每次启动前自动查杀旧僵尸进程。
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/70 rounded-lg border border-slate-800">
+                    <p className="font-bold text-amber-400 mb-1">Q4：手机熄屏或者锁屏一段时间后，Bot 就失去反应？</p>
+                    <p className="text-slate-400 leading-relaxed">
+                      <strong>根本原因：</strong>Android 系统的激进省电策略在锁屏后切断了 Termux 的后台网络。<br />
+                      <strong>解决方案：</strong>在 Termux 中运行一次 <code className="bg-slate-950 text-emerald-400 px-1 rounded font-mono">termux-wake-lock</code>，并在手机设置中将 Termux 应用的“电池优化”改为“无限制”。
+                    </p>
+                  </div>
                 </div>
               </div>
 
