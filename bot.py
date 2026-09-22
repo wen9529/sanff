@@ -1206,6 +1206,17 @@ def is_admin(user_id):
         return True 
     return str(user_id) == admin_id
 
+def get_main_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("📊 今日盈亏总榜", callback_data="btn_stats"),
+        types.InlineKeyboardButton("🎯 查看下期预测", callback_data="btn_predict"),
+        types.InlineKeyboardButton("📜 最近对错复盘", callback_data="btn_history"),
+        types.InlineKeyboardButton("📡 监控运行状态", callback_data="btn_status"),
+        types.InlineKeyboardButton("🔄 刷新最新数据", callback_data="btn_refresh")
+    )
+    return markup
+
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -1220,19 +1231,50 @@ def send_welcome(message):
         "➡️ /pullall - [管理员] 立即强制在后台全量重拉 500 期今日历史，100% 对齐防漏\n"
         "➡️ /broadcast - [管理员] 强制立即生成当前预测并群发到订阅频道\n"
         "➡️ /reset - [管理员] 立即手动清空清零今日的所有开奖历史\n\n"
-        "💡 <i>提示: 无论发送 /stats 还是发送包含“盈亏”、“战绩”均可直接获取盈亏统计报告。</i>"
+        "💡 <i>您也可以直接点击下方快捷按钮进行交互：</i>"
     )
-    bot.reply_to(message, welcome_text)
+    bot.reply_to(message, welcome_text, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
 @bot.message_handler(commands=['stats', 'profit', 'yingkui'])
 def handle_stats(message):
     resp = format_stats_message()
-    bot.reply_to(message, resp)
+    bot.reply_to(message, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
 @bot.message_handler(commands=['history'])
 def handle_history(message):
     resp = get_prediction_history_text(limit=10)
-    bot.reply_to(message, resp)
+    bot.reply_to(message, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback_query(call):
+    chat_id = call.message.chat.id
+    try:
+        if call.data in ["btn_stats", "btn_refresh"]:
+            resp = format_stats_message()
+            bot.answer_callback_query(call.id, "📊 盈亏与胜率已刷新")
+            bot.send_message(chat_id, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
+        elif call.data == "btn_predict":
+            total = len(history_db["records"])
+            if total < 50:
+                bot.answer_callback_query(call.id, f"⚠️ 数据收集 {total}/50 期，未达预测阈值", show_alert=True)
+                return
+            next_exp, stats = analyze_and_predict()
+            resp = format_predict_message(stats, next_exp)
+            bot.answer_callback_query(call.id, f"🎯 第 {next_exp} 期预测已生成")
+            bot.send_message(chat_id, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
+        elif call.data == "btn_history":
+            resp = get_prediction_history_text(limit=10)
+            bot.answer_callback_query(call.id, "📜 历史对错复盘已加载")
+            bot.send_message(chat_id, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
+        elif call.data == "btn_status":
+            total = len(history_db["records"])
+            date_str = history_db["date"]
+            latest_record = history_db["records"][0] if total > 0 else None
+            resp = format_status_message(total, date_str, latest_record)
+            bot.answer_callback_query(call.id, "📡 系统运行状态正常")
+            bot.send_message(chat_id, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
+    except Exception as e:
+        logger.error(f"处理按钮回调异常: {e}")
 
 @bot.message_handler(commands=['pullall'])
 def handle_pullall(message):
@@ -1251,7 +1293,7 @@ def handle_status(message):
     latest_record = history_db["records"][0] if total > 0 else None
     
     status_text = format_status_message(total, date_str, latest_record)
-    bot.reply_to(message, status_text)
+    bot.reply_to(message, status_text, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
 @bot.message_handler(commands=['predict'])
 def handle_predict(message):
@@ -1262,7 +1304,7 @@ def handle_predict(message):
         
     next_exp, stats = analyze_and_predict()
     resp = format_predict_message(stats, next_exp)
-    bot.reply_to(message, resp)
+    bot.reply_to(message, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
 @bot.message_handler(commands=['broadcast'])
 def handle_broadcast(message):
@@ -1304,7 +1346,7 @@ def handle_reset(message):
 @bot.message_handler(func=lambda msg: msg.text and any(k in msg.text for k in ['盈亏', '战绩', '收益', '统计']))
 def handle_stats_text(message):
     resp = format_stats_message()
-    bot.reply_to(message, resp)
+    bot.reply_to(message, resp, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
 
 if __name__ == '__main__':
@@ -1326,7 +1368,10 @@ if __name__ == '__main__':
     print("🚀 正在 Termux 下建立长轮询连接，随时可以关闭 SSH 终端挂机运行。")
     print("==========================================")
     
-    try:
-        bot.infinity_polling(timeout=20, long_polling_timeout=25)
-    except Exception as e:
-        logger.error(f"Telegram Polling 遇到故障退出: {e}")
+    # 永不崩溃的自愈长轮询循环，抵抗移动端 Wi-Fi/4G 网络抖动与临时断线
+    while True:
+        try:
+            bot.infinity_polling(timeout=20, long_polling_timeout=25)
+        except Exception as e:
+            logger.error(f"Telegram Polling 网络抖动或中断: {e}，5秒后自动重连...")
+            time.sleep(5)
